@@ -1,3 +1,16 @@
+resource "aws_sqs_queue" "dlq" {
+  for_each = { for k, v in var.queues : k => v if v.dead_letter_queue != null }
+
+  name                      = "${each.value.name}-dlq"
+  message_retention_seconds = each.value.dead_letter_queue.message_retention_seconds
+  kms_master_key_id         = each.value.kms_master_key_id
+  sqs_managed_sse_enabled   = each.value.kms_master_key_id == null ? true : null
+
+  tags = merge({
+    Name = format("%s-%s-%s-dlq", var.project, var.env, each.key)
+  }, var.tags)
+}
+
 resource "aws_sqs_queue" "this" {
   for_each = var.queues
 
@@ -8,9 +21,9 @@ resource "aws_sqs_queue" "this" {
   kms_master_key_id          = each.value.kms_master_key_id
   sqs_managed_sse_enabled    = each.value.kms_master_key_id == null ? true : null
 
-  redrive_policy = each.value.dlq_arn != null ? jsonencode({
-    deadLetterTargetArn = each.value.dlq_arn
-    maxReceiveCount     = each.value.max_receive_count
+  redrive_policy = each.value.dead_letter_queue != null ? jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq[each.key].arn
+    maxReceiveCount     = each.value.dead_letter_queue.max_receive_count
   }) : null
 
   tags = merge({

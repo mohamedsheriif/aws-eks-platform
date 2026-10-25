@@ -16,11 +16,12 @@ variable "queues" {
     # (Optional) KMS key for server-side encryption. Defaults to null (SQS-managed SSE).
     kms_master_key_id = optional(string)
 
-    # (Optional) The ARN of the dead-letter queue. Defaults to null.
-    dlq_arn = optional(string, null)
-
-    # (Optional) The maximum number of receive attempts before sending to the DLQ. Defaults to 3.
-    max_receive_count = optional(number, 3)
+    # (Optional) Create a "<name>-dlq" queue that receives messages after max_receive_count
+    # failed attempts. Uses the same encryption as the queue. Defaults to null (no DLQ).
+    dead_letter_queue = optional(object({
+      max_receive_count         = optional(number, 3)
+      message_retention_seconds = optional(number, 1209600)
+    }))
 
     # (Optional) A queue policy document in JSON format. Defaults to null.
     policy = optional(string, null)
