@@ -1,0 +1,100 @@
+# write (ingest), read (query) and backend (compactor, index gateway, ruler) scale
+# independently; chunks and index live in S3.
+deploymentMode: SimpleScalable
+
+loki:
+  # Single tenant.
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  schemaConfig:
+    configs:
+      - from: "2025-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  # Credentials come from the Pod Identity role; the bucket encrypts with its default KMS key.
+  storage:
+    type: s3
+    bucketNames:
+      chunks: ${bucket}
+      ruler: ${bucket}
+    s3:
+      region: ${region}
+  limits_config:
+    retention_period: 336h
+  compactor:
+    compaction_interval: 10m
+    retention_enabled: true
+    retention_delete_delay: 2h
+    delete_request_store: s3
+
+write:
+  replicas: 1
+  persistence:
+    storageClass: gp3
+    size: 10Gi
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+read:
+  replicas: 1
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+backend:
+  replicas: 1
+  persistence:
+    storageClass: gp3
+    size: 10Gi
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+# Single entry point: routes pushes to write and queries to read.
+gateway:
+  replicas: 1
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      memory: 48Mi
+
+singleBinary:
+  replicas: 0
+
+# Must match the Pod Identity association in the eks unit.
+serviceAccount:
+  name: loki
+
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false

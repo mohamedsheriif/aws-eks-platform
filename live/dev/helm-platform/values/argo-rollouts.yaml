@@ -1,0 +1,14 @@
+controller:
+  replicas: 1
+  nodeSelector:
+    role: system
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      memory: 96Mi
