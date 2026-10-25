@@ -33,6 +33,10 @@ variable "roles" {
     # (pods.eks.amazonaws.com) also need "sts:TagSession". Defaults to ["sts:AssumeRole"].
     assume_role_actions = optional(list(string), ["sts:AssumeRole"])
 
+    # (Optional) Trust policy conditions, operator => { key => value }, e.g.
+    # { StringEquals = { "aws:SourceAccount" = "111111111111" } }. Defaults to {} (none).
+    assume_role_conditions = optional(map(map(string)), {})
+
     # (Optional) List of managed policy ARNs to attach. Defaults to [].
     policy_arns = optional(list(string), [])
 

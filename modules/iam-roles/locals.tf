@@ -22,11 +22,14 @@ locals {
     for role_name, role in var.roles :
     role_name => jsonencode({
       Version = "2012-10-17"
-      Statement = [{
-        Effect    = "Allow"
-        Principal = role.service != null ? tomap({ Service = [role.service] }) : tomap({ AWS = role.trusted_entity })
-        Action    = role.assume_role_actions
-      }]
+      Statement = [merge(
+        {
+          Effect    = "Allow"
+          Principal = role.service != null ? tomap({ Service = [role.service] }) : tomap({ AWS = role.trusted_entity })
+          Action    = role.assume_role_actions
+        },
+        { for k, v in { Condition = role.assume_role_conditions } : k => v if length(v) > 0 },
+      )]
     })
   }
 }
