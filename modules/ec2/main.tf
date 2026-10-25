@@ -1,7 +1,14 @@
+# Resolves AMIs published by AWS as public SSM parameters, e.g. the latest Amazon Linux 2023.
+data "aws_ssm_parameter" "ami" {
+  for_each = { for k, v in var.ec2_instances : k => v if v.ami_id == null }
+
+  name = each.value.ami_ssm_parameter
+}
+
 resource "aws_instance" "this" {
   for_each = var.ec2_instances
 
-  ami                         = each.value.ami_id
+  ami                         = coalesce(each.value.ami_id, try(data.aws_ssm_parameter.ami[each.key].value, null))
   instance_type               = each.value.instance_type
   subnet_id                   = each.value.subnet_id
   vpc_security_group_ids      = each.value.security_group_ids
@@ -28,5 +35,7 @@ resource "aws_instance" "this" {
 
   lifecycle {
     create_before_destroy = true
+    # A newer AMI behind the SSM parameter must not replace a running instance.
+    ignore_changes = [ami]
   }
 }

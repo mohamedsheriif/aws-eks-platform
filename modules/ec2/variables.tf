@@ -17,8 +17,12 @@ variable "tags" {
 variable "ec2_instances" {
   description = "Map of EC2 instance configurations"
   type = map(object({
-    # (Required) The AMI ID to use for the instance.
-    ami_id = string
+    # (Optional) The AMI ID to use. Set this or ami_ssm_parameter. Defaults to null.
+    ami_id = optional(string)
+
+    # (Optional) SSM parameter holding the AMI ID, used when ami_id is null
+    # (e.g. /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64). Defaults to null.
+    ami_ssm_parameter = optional(string)
 
     # (Required) The instance type (e.g., t3.micro).
     instance_type = string
@@ -52,4 +56,9 @@ variable "ec2_instances" {
   }))
 
   default = {}
+
+  validation {
+    condition     = alltrue([for i in values(var.ec2_instances) : i.ami_id != null || i.ami_ssm_parameter != null])
+    error_message = "Each instance needs ami_id or ami_ssm_parameter."
+  }
 }
