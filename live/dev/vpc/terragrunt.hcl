@@ -58,7 +58,6 @@ inputs = {
       cidr_block        = "10.10.32.0/19"
       tags = {
         "kubernetes.io/role/internal-elb" = "1"
-        "karpenter.sh/discovery"          = "${local.env.project}-${local.env.env}"
       }
     }
     app-us-east-1b = {
@@ -67,7 +66,6 @@ inputs = {
       cidr_block        = "10.10.64.0/19"
       tags = {
         "kubernetes.io/role/internal-elb" = "1"
-        "karpenter.sh/discovery"          = "${local.env.project}-${local.env.env}"
       }
     }
 
