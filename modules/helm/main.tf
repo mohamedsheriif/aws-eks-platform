@@ -7,9 +7,13 @@ resource "helm_release" "this" {
   namespace        = each.value.namespace
   create_namespace = each.value.create_namespace
   values           = each.value.values
+  timeout          = each.value.timeout
 }
-resource "kubernetes_manifest" "this" {
+
+# kubectl_manifest doesn't contact the cluster at plan time, so manifests whose CRDs
+# come from the releases above can be planned on a fresh cluster.
+resource "kubectl_manifest" "this" {
   for_each   = var.manifests
-  manifest   = jsondecode(each.value)
+  yaml_body  = each.value
   depends_on = [helm_release.this]
 }
