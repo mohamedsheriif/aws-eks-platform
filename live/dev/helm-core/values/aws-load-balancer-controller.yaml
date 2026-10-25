@@ -1,0 +1,35 @@
+clusterName: ${cluster_name}
+# Pods can't reach IMDS (hop limit 1), so region and VPC are set explicitly.
+region: ${region}
+vpcId: ${vpc_id}
+
+replicaCount: 1
+
+# Must match the Pod Identity association in the eks unit.
+serviceAccount:
+  name: aws-load-balancer-controller
+
+# IngressClasses alb-internal and alb-public are created as manifests in this unit.
+createIngressClassResource: false
+
+# Only ALB Ingress is used. Without this, every new Service would go through the
+# controller's webhook and fail while the controller is down.
+enableServiceMutatorWebhook: false
+
+# The IAM policy has no WAF or Shield permissions.
+enableShield: false
+enableWaf: false
+enableWafv2: false
+
+defaultTargetType: ip
+defaultTags: ${tags}
+
+nodeSelector:
+  role: system
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 192Mi
