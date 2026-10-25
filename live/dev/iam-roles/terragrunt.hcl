@@ -38,6 +38,9 @@ inputs = {
   env     = local.env.env
   tags    = local.env.tags
 
+  # Trusted by every role below with pod_identity = true.
+  pod_identity_cluster_arn = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}"
+
   roles = {
     eks-cluster = {
       name        = "${local.env.project}-${local.env.env}-eks-cluster"
@@ -106,27 +109,17 @@ inputs = {
     }
 
     vpc-cni = {
-      name                = "${local.env.project}-${local.env.env}-vpc-cni"
-      description         = "kube-system/aws-node"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
-      policy_arns = ["arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"]
+      name         = "${local.env.project}-${local.env.env}-vpc-cni"
+      description  = "kube-system/aws-node"
+      pod_identity = true
+      policy_arns  = ["arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"]
     }
 
     ebs-csi = {
-      name                = "${local.env.project}-${local.env.env}-ebs-csi"
-      description         = "kube-system/ebs-csi-controller-sa"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
-      policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
+      name         = "${local.env.project}-${local.env.env}-ebs-csi"
+      description  = "kube-system/ebs-csi-controller-sa"
+      pod_identity = true
+      policy_arns  = ["arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
       # The managed policy doesn't cover customer managed keys; the gp3 StorageClass uses the ebs key.
       inline_policies = {
         ebs-kms = jsonencode({
@@ -154,14 +147,9 @@ inputs = {
     # Permissions follow the AWS Load Balancer Controller reference policy; mutations
     # are limited to resources tagged with elbv2.k8s.aws/cluster.
     aws-load-balancer-controller = {
-      name                = "${local.env.project}-${local.env.env}-aws-load-balancer-controller"
-      description         = "kube-system/aws-load-balancer-controller"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-aws-load-balancer-controller"
+      description  = "kube-system/aws-load-balancer-controller"
+      pod_identity = true
       inline_policies = {
         aws-load-balancer-controller = jsonencode({
           Version = "2012-10-17"
@@ -336,14 +324,9 @@ inputs = {
     }
 
     external-dns = {
-      name                = "${local.env.project}-${local.env.env}-external-dns"
-      description         = "kube-system/external-dns"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-external-dns"
+      description  = "kube-system/external-dns"
+      pod_identity = true
       inline_policies = {
         route53 = jsonencode({
           Version = "2012-10-17"
@@ -366,14 +349,9 @@ inputs = {
 
     # External Secrets Operator: syncs secrets under <project>/<env>/ in Secrets Manager into Kubernetes Secrets.
     external-secrets = {
-      name                = "${local.env.project}-${local.env.env}-external-secrets"
-      description         = "external-secrets/external-secrets"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-external-secrets"
+      description  = "external-secrets/external-secrets"
+      pod_identity = true
       inline_policies = {
         secrets-read = jsonencode({
           Version = "2012-10-17"
@@ -422,14 +400,9 @@ inputs = {
     }
 
     loki = {
-      name                = "${local.env.project}-${local.env.env}-loki"
-      description         = "logging/loki"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-loki"
+      description  = "logging/loki"
+      pod_identity = true
       inline_policies = {
         s3 = jsonencode({
           Version = "2012-10-17"

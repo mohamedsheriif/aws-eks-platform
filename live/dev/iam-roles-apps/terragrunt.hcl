@@ -29,19 +29,17 @@ inputs = {
   env     = local.env.env
   tags    = local.env.tags
 
+  # Trusted by every role below with pod_identity = true.
+  pod_identity_cluster_arn = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}"
+
   roles = {
     # Microservices in the apps namespace. Each service account is named after its service.
     # The RDS resource ID is assigned at creation, so rds-db:connect uses dbuser:*/<db user>.
 
     catalog = {
-      name                = "${local.env.project}-${local.env.env}-catalog"
-      description         = "apps/catalog"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-catalog"
+      description  = "apps/catalog"
+      pod_identity = true
       inline_policies = {
         catalog = jsonencode({
           Version = "2012-10-17"
@@ -87,14 +85,9 @@ inputs = {
     }
 
     users = {
-      name                = "${local.env.project}-${local.env.env}-users"
-      description         = "apps/users"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-users"
+      description  = "apps/users"
+      pod_identity = true
       inline_policies = {
         users = jsonencode({
           Version = "2012-10-17"
@@ -131,14 +124,9 @@ inputs = {
     }
 
     orders = {
-      name                = "${local.env.project}-${local.env.env}-orders"
-      description         = "apps/orders"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-orders"
+      description  = "apps/orders"
+      pod_identity = true
       inline_policies = {
         orders = jsonencode({
           Version = "2012-10-17"
@@ -178,14 +166,9 @@ inputs = {
 
     # Payment provider API keys come from Secrets Manager through ESO, not from this role.
     payments = {
-      name                = "${local.env.project}-${local.env.env}-payments"
-      description         = "apps/payments"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-payments"
+      description  = "apps/payments"
+      pod_identity = true
       inline_policies = {
         payments = jsonencode({
           Version = "2012-10-17"
@@ -215,14 +198,9 @@ inputs = {
     }
 
     notifications = {
-      name                = "${local.env.project}-${local.env.env}-notifications"
-      description         = "apps/notifications"
-      service             = "pods.eks.amazonaws.com"
-      assume_role_actions = ["sts:AssumeRole", "sts:TagSession"]
-      assume_role_conditions = {
-        StringEquals = { "aws:SourceAccount" = local.env.account_id }
-        ArnEquals    = { "aws:SourceArn" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}" }
-      }
+      name         = "${local.env.project}-${local.env.env}-notifications"
+      description  = "apps/notifications"
+      pod_identity = true
       inline_policies = {
         notifications = jsonencode({
           Version = "2012-10-17"
