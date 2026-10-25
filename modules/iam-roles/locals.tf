@@ -18,9 +18,22 @@ locals {
     ]
   ])
 
+  pod_identity_assume_role_policy = var.pod_identity_cluster_arn == null ? null : jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = ["pods.eks.amazonaws.com"] }
+      Action    = ["sts:AssumeRole", "sts:TagSession"]
+      Condition = {
+        StringEquals = { "aws:SourceAccount" = split(":", var.pod_identity_cluster_arn)[4] }
+        ArnEquals    = { "aws:SourceArn" = var.pod_identity_cluster_arn }
+      }
+    }]
+  })
+
   assume_role_policies = {
     for role_name, role in var.roles :
-    role_name => jsonencode({
+    role_name => role.pod_identity ? local.pod_identity_assume_role_policy : jsonencode({
       Version = "2012-10-17"
       Statement = [merge(
         {

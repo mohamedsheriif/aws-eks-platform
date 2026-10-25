@@ -14,6 +14,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "pod_identity_cluster_arn" {
+  description = "EKS cluster ARN that roles with pod_identity = true trust. Required when any role sets it."
+  type        = string
+  default     = null
+}
+
 variable "roles" {
   description = "Map of IAM roles to create"
   type = map(object({
@@ -23,14 +29,18 @@ variable "roles" {
     # (Optional) Description of the IAM role. Defaults to "".
     description = optional(string, "")
 
+    # (Optional) Trust EKS Pod Identity (pods.eks.amazonaws.com, sts:AssumeRole + sts:TagSession),
+    # limited to var.pod_identity_cluster_arn and its account. Replaces service, trusted_entity,
+    # assume_role_actions and assume_role_conditions. Defaults to false.
+    pod_identity = optional(bool, false)
+
     # (Optional) AWS service principal allowed to assume the role (e.g. ec2.amazonaws.com).
     service = optional(string, null)
 
     # (Optional) AWS principal ARNs allowed to assume the role. Used when service is null.
     trusted_entity = optional(list(string), null)
 
-    # (Optional) Actions allowed in the trust policy. EKS Pod Identity roles
-    # (pods.eks.amazonaws.com) also need "sts:TagSession". Defaults to ["sts:AssumeRole"].
+    # (Optional) Actions allowed in the trust policy. Defaults to ["sts:AssumeRole"].
     assume_role_actions = optional(list(string), ["sts:AssumeRole"])
 
     # (Optional) Trust policy conditions, operator => { key => value }, e.g.
@@ -48,7 +58,12 @@ variable "roles" {
   }))
 
   validation {
-    condition     = alltrue([for r in values(var.roles) : r.service != null || r.trusted_entity != null])
-    error_message = "Each role needs either service or trusted_entity."
+    condition     = alltrue([for r in values(var.roles) : r.pod_identity != (r.service != null || r.trusted_entity != null)])
+    error_message = "Each role needs exactly one of pod_identity, service or trusted_entity."
+  }
+
+  validation {
+    condition     = alltrue([for r in values(var.roles) : !r.pod_identity || var.pod_identity_cluster_arn != null])
+    error_message = "Roles with pod_identity = true need pod_identity_cluster_arn."
   }
 }
