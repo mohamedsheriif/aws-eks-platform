@@ -5,7 +5,9 @@ resource "aws_acm_certificate" "this" {
   validation_method         = "DNS"
   subject_alternative_names = each.value.subject_alternative_names
 
-  tags = var.tags
+  tags = merge({
+    Name = format("%s-%s-%s-cert", var.project, var.env, each.key)
+  }, var.tags)
 
   lifecycle {
     create_before_destroy = true

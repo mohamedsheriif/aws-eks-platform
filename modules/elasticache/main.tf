@@ -31,7 +31,9 @@ resource "aws_elasticache_user" "default" {
     type = "no-password-required"
   }
 
-  tags = var.tags
+  tags = merge({
+    Name = format("%s-%s-%s-default-user", var.project, var.env, each.key)
+  }, var.tags)
 }
 
 # IAM authentication requires user_id to equal user_name.
@@ -47,7 +49,9 @@ resource "aws_elasticache_user" "iam" {
     type = "iam"
   }
 
-  tags = var.tags
+  tags = merge({
+    Name = format("%s-%s-%s-user", var.project, var.env, each.key)
+  }, var.tags)
 }
 
 resource "aws_elasticache_user_group" "this" {
@@ -60,7 +64,9 @@ resource "aws_elasticache_user_group" "this" {
     [for k, u in aws_elasticache_user.iam : u.user_id if local.iam_users[k].cache_key == each.key]
   )
 
-  tags = var.tags
+  tags = merge({
+    Name = format("%s-%s-%s-user-group", var.project, var.env, each.key)
+  }, var.tags)
 }
 
 resource "aws_elasticache_replication_group" "this" {
@@ -93,5 +99,7 @@ resource "aws_elasticache_replication_group" "this" {
   at_rest_encryption_enabled = true
   kms_key_id                 = each.value.kms_key_id
 
-  tags = var.tags
+  tags = merge({
+    Name = format("%s-%s-%s-cache", var.project, var.env, each.key)
+  }, var.tags)
 }

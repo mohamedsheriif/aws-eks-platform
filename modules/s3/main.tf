@@ -6,7 +6,7 @@ resource "aws_s3_bucket" "this" {
   object_lock_enabled = each.value.object_lock_enabled
 
   tags = merge(
-    { Name = format("%s-s3", each.key) },
+    { Name = format("%s-%s-%s-s3", var.project, var.env, each.key) },
     var.tags,
     each.value.tags
   )
