@@ -130,7 +130,7 @@ flowchart LR
 .
 ├── modules/               One Terraform module per AWS service
 ├── scripts/
-│   └── bootstrap.sh       Creates the Terraform state bucket for an environment
+│   └── bootstrap.sh       One-time account setup: state bucket and CI roles
 └── live/
     └── dev/
         ├── env.hcl        Project, account, region, domain and tags
@@ -144,6 +144,7 @@ Units keep their configuration inline and declare their dependencies, which also
 
 | Unit | Creates |
 |---|---|
+| `github-oidc` | GitHub OIDC provider, plan role for pull requests, apply role for the `dev` environment |
 | `kms` | One KMS key per service |
 | `vpc` | VPC, subnets, route tables, NAT gateway, S3 endpoint |
 | `security-groups` | Tailscale router and EKS API security groups |
@@ -182,10 +183,11 @@ Units keep their configuration inline and declare their dependencies, which also
 - An AWS CLI profile per environment (`shopflow-dev`) with MFA
 - A Tailscale account
 
-### Create the state bucket (once per environment)
+### Bootstrap (once per environment)
 
-Terraform can't create the bucket that stores its own state, so a script does it: versioned, encrypted,
-public access blocked, TLS only. It checks that the profile points at the account in `env.hcl` and is safe to re-run.
+One script prepares a new account: it creates the Terraform state bucket (versioned, encrypted, public access
+blocked, TLS only), then applies `github-oidc` so GitHub Actions can plan and apply without stored AWS keys.
+It checks that the profile points at the account in `env.hcl` and is safe to re-run.
 
 ```bash
 ./scripts/bootstrap.sh dev
@@ -273,6 +275,5 @@ Applies will authenticate to AWS through GitHub OIDC, with no long-lived keys.
 ## Roadmap
 
 - [ ] Prod environment
-- [ ] GitHub OIDC deploy role
 - [ ] CI pipeline
 - [ ] Account baseline: CloudTrail, GuardDuty, AWS Config, AWS Budgets

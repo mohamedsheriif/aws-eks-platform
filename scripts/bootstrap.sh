@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# Creates the S3 bucket that holds Terraform state for one environment.
-# Terraform can't create the bucket it stores its own state in, so this runs once,
-# before the first `terragrunt apply`. Safe to re-run: every step is idempotent.
+# One-time setup of an environment's AWS account, run by a person with admin access:
+#   1-8. Create the S3 bucket that holds Terraform state. Terraform can't create the
+#        bucket it stores its own state in, so this part uses the AWS CLI.
+#   9.   Apply the github-oidc unit: the roles GitHub Actions uses for plan and apply.
+#        These stay managed by Terragrunt; their state goes into the new bucket.
+# After this, everything else can be deployed from CI. Safe to re-run.
 #
 # Usage:   ./scripts/bootstrap.sh <env>
 # Example: ./scripts/bootstrap.sh dev
 #
+# Requires: AWS CLI v2 and Terragrunt.
 # Reads project, region and account_id from live/<env>/env.hcl. The bucket name and
 # AWS profile below follow the same pattern as state_bucket and aws_profile there.
 
@@ -18,12 +22,20 @@ if [[ $# -ne 1 ]]; then
 fi
 
 ENV="$1"
-ENV_FILE="$(dirname "$0")/../live/${ENV}/env.hcl"
+ENV_DIR="$(cd "$(dirname "$0")/.." && pwd)/live/${ENV}"
+ENV_FILE="${ENV_DIR}/env.hcl"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: $ENV_FILE not found" >&2
   exit 1
 fi
+
+for tool in aws terragrunt; do
+  if ! command -v "$tool" >/dev/null; then
+    echo "Error: $tool is not installed" >&2
+    exit 1
+  fi
+done
 
 # Reads a quoted value such as `region = "us-east-1"` from env.hcl.
 read_env() {
@@ -38,7 +50,7 @@ REGION="$(read_env region)"
 ACCOUNT_ID="$(read_env account_id)"
 
 BUCKET="${PROJECT}-${ENV}-tfstate-${ACCOUNT_ID}"
-PROFILE="${AWS_PROFILE:-${PROJECT}-${ENV}}"
+PROFILE="${PROJECT}-${ENV}"
 
 # Old state versions are kept this long, so a bad apply can be rolled back.
 NONCURRENT_VERSION_DAYS=90
@@ -142,6 +154,12 @@ echo "==> Tagging"
 aws_cli s3api put-bucket-tagging --bucket "$BUCKET" \
   --tagging "TagSet=[{Key=Project,Value=${PROJECT}},{Key=Environment,Value=${ENV}},{Key=ManagedBy,Value=bootstrap}]"
 
+# ---------------------------------------------------------------------------
+# 9. Create the GitHub OIDC roles for CI
+# ---------------------------------------------------------------------------
+# Terragrunt shows the plan and asks for confirmation before creating anything.
+echo "==> Applying github-oidc"
+(cd "${ENV_DIR}/github-oidc" && terragrunt apply)
+
 echo
-echo "Done. State bucket $BUCKET is ready."
-echo "Terragrunt locks state with a lock file in the same bucket (use_lockfile), so no DynamoDB table is needed."
+echo "Done. State bucket $BUCKET and the GitHub Actions roles are ready."
