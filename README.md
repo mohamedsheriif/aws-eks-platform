@@ -131,7 +131,8 @@ flowchart LR
 ├── .github/               CI/CD workflows and a shared setup action
 ├── modules/               One Terraform module per AWS service
 ├── scripts/
-│   └── bootstrap.sh       One-time account setup: state bucket and CI roles
+│   ├── bootstrap.sh       One-time account setup: state bucket and CI roles
+│   └── security-scan.sh   Trivy scan of every unit with its real inputs
 └── live/
     └── dev/
         ├── env.hcl        Project, account, region, domain and tags
@@ -270,6 +271,7 @@ GitHub Actions, authenticated to AWS through OIDC (no stored keys):
 |---|---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | Pull request | **Format** (`terraform fmt`, `terragrunt hcl fmt`) and **Lint** (TFLint with the AWS ruleset) in parallel, then **Plan** per environment with a per-unit summary |
 | [`cd.yml`](.github/workflows/cd.yml) | Push to `main` | **Apply** per environment, inside a GitHub environment that can require approval |
+| [`security.yml`](.github/workflows/security.yml) | Pull request, push to `main` | **Trivy** scan of every unit with its real inputs; findings go to the Security tab |
 
 - **Mock until AWS exists.** While the repository variable `AWS_DEPLOY_ENABLED` isn't `true`, plans run with
   `TG_MOCK=true` and apply is skipped. Setting it switches to real plans and applies.
