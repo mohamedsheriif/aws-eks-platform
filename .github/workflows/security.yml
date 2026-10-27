@@ -73,6 +73,32 @@ jobs:
       - name: Scan
         run: ./scripts/security-scan.sh "${{ matrix.environment }}" "$RUNNER_TEMP/trivy.sarif"
 
+      # One row per finding, highest severity first, linked to the check docs and the code.
+      - name: Summarize findings
+        run: |
+          {
+            echo "### Trivy findings: ${{ matrix.environment }}"
+            echo
+            echo "| Severity | Check | Finding | Location |"
+            echo "|---|---|---|---|"
+            jq -r --arg blob "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}" '
+              (.runs[0].tool.driver.rules | map({ (.id): .properties.tags[-1] }) | add // {}) as $severity
+              | [ .runs[0].results[]
+                  | .locations[0].physicalLocation as $loc
+                  | {
+                      severity: $severity[.ruleId],
+                      check: .ruleId,
+                      message: (.message.text | capture("Message: (?<m>[^\n]*)").m),
+                      file: $loc.artifactLocation.uri,
+                      line: $loc.region.startLine
+                    } ]
+              | unique
+              | sort_by((.severity as $s | ["CRITICAL", "HIGH", "MEDIUM", "LOW"] | index($s)), .file, .line)
+              | .[]
+              | "| \(.severity) | [\(.check)](https://avd.aquasec.com/misconfig/\(.check | ascii_downcase)) | \(.message) | [\(.file):\(.line)](\($blob)/\(.file)#L\(.line)) |"
+            ' "$RUNNER_TEMP/trivy.sarif"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload to code scanning
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
