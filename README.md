@@ -129,6 +129,8 @@ flowchart LR
 ```
 .
 ├── modules/               One Terraform module per AWS service
+├── scripts/
+│   └── bootstrap.sh       Creates the Terraform state bucket for an environment
 └── live/
     └── dev/
         ├── env.hcl        Project, account, region, domain and tags
@@ -177,8 +179,17 @@ Units keep their configuration inline and declare their dependencies, which also
 ### Prerequisites
 
 - Terraform ≥ 1.10, Terragrunt 0.90, AWS CLI v2, kubectl
-- An AWS CLI profile per environment (`shopflow-dev`) with MFA, and the state bucket from `env.hcl`
+- An AWS CLI profile per environment (`shopflow-dev`) with MFA
 - A Tailscale account
+
+### Create the state bucket (once per environment)
+
+Terraform can't create the bucket that stores its own state, so a script does it: versioned, encrypted,
+public access blocked, TLS only. It checks that the profile points at the account in `env.hcl` and is safe to re-run.
+
+```bash
+./scripts/bootstrap.sh dev
+```
 
 ### Plan locally, without AWS
 
@@ -262,6 +273,6 @@ Applies will authenticate to AWS through GitHub OIDC, with no long-lived keys.
 ## Roadmap
 
 - [ ] Prod environment
-- [ ] Bootstrap unit: state bucket and GitHub OIDC deploy role
+- [ ] GitHub OIDC deploy role
 - [ ] CI pipeline
 - [ ] Account baseline: CloudTrail, GuardDuty, AWS Config, AWS Budgets
