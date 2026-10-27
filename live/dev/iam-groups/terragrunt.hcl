@@ -24,7 +24,7 @@ dependency "iam_roles" {
 
 inputs = {
   # EKS access entries only accept roles, so each group may assume exactly one role
-  # and the role is what gets cluster access.
+  # and the role is what gets cluster access. MFA is required here and in the roles' trust.
   groups = {
     admins = {
       name = "${local.env.project}-${local.env.env}-admins"
@@ -32,9 +32,10 @@ inputs = {
         assume-eks-admin = jsonencode({
           Version = "2012-10-17"
           Statement = [{
-            Effect   = "Allow"
-            Action   = "sts:AssumeRole"
-            Resource = dependency.iam_roles.outputs.role_arns["eks-admin"]
+            Effect    = "Allow"
+            Action    = "sts:AssumeRole"
+            Resource  = dependency.iam_roles.outputs.role_arns["eks-admin"]
+            Condition = { Bool = { "aws:MultiFactorAuthPresent" = "true" } }
           }]
         })
       }
@@ -46,9 +47,10 @@ inputs = {
         assume-eks-developer = jsonencode({
           Version = "2012-10-17"
           Statement = [{
-            Effect   = "Allow"
-            Action   = "sts:AssumeRole"
-            Resource = dependency.iam_roles.outputs.role_arns["eks-developer"]
+            Effect    = "Allow"
+            Action    = "sts:AssumeRole"
+            Resource  = dependency.iam_roles.outputs.role_arns["eks-developer"]
+            Condition = { Bool = { "aws:MultiFactorAuthPresent" = "true" } }
           }]
         })
       }
