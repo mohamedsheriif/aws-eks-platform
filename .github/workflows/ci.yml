@@ -1,17 +1,25 @@
 name: CI
 
-# Pull requests: check formatting, lint the modules and plan every environment.
+# Check formatting, lint the modules, then plan every environment and scan the plans with
+# Trivy. Runs on main too, so Security > Code scanning tracks the default branch.
 on:
   pull_request:
     paths:
       - live/**
       - modules/**
+      - scripts/scan-plans.sh
       - .tflint.hcl
       - .github/**
+  push:
+    branches: [main]
+    paths:
+      - live/**
+      - modules/**
+      - scripts/scan-plans.sh
 
-# A new push to the same pull request cancels the run in progress.
+# A new push to the same pull request or branch cancels the run in progress.
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -78,6 +86,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC token for AWS
+      security-events: write # upload Trivy results to code scanning
     strategy:
       fail-fast: false
       matrix:
@@ -124,7 +133,8 @@ jobs:
           if [[ "$TG_MOCK" == "false" ]]; then
             queue_args+=(--queue-exclude-dir 'helm-*')
           fi
-          terragrunt run --all plan "${queue_args[@]}" -- -no-color 2>&1 | tee "$RUNNER_TEMP/plan.log"
+          terragrunt run --all plan "${queue_args[@]}" --json-out-dir "$RUNNER_TEMP/plans" -- -no-color 2>&1 \
+            | tee "$RUNNER_TEMP/plan.log"
 
       - name: Summarize plan
         if: always()
@@ -137,3 +147,49 @@ jobs:
             echo "|---|---|"
             sed -nE 's/.*\[([^]]+)\] terraform: (Plan: .*|No changes\..*)/| \1 | \2 |/p' "$RUNNER_TEMP/plan.log"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.1
+          cache: true
+
+      # Trivy downloads its checks bundle on each run unless it is cached. The key changes
+      # every run so the newest bundle is saved; restore-keys picks up the latest one.
+      - name: Cache Trivy checks
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-checks-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: trivy-checks-${{ runner.os }}-
+
+      - name: Scan plans
+        run: ./scripts/scan-plans.sh "${{ matrix.environment }}" "$RUNNER_TEMP/plans" "$RUNNER_TEMP/trivy.sarif"
+
+      # One row per finding, highest severity first, linked to the check docs and the unit.
+      - name: Summarize findings
+        run: |
+          {
+            echo "### Trivy findings: ${{ matrix.environment }}"
+            echo
+            echo "| Severity | Check | Finding | Unit |"
+            echo "|---|---|---|---|"
+            jq -r --arg blob "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}" '
+              (.runs[0].tool.driver.rules | map({ (.id): .properties.tags[-1] }) | add // {}) as $severity
+              | [ .runs[0].results[]
+                  | {
+                      severity: $severity[.ruleId],
+                      check: .ruleId,
+                      message: (.message.text | capture("Message: (?<m>[^\n]*)").m),
+                      file: .locations[0].physicalLocation.artifactLocation.uri
+                    } ]
+              | unique
+              | sort_by((.severity as $s | ["CRITICAL", "HIGH", "MEDIUM", "LOW"] | index($s)), .file)
+              | .[]
+              | "| \(.severity) | [\(.check)](https://avd.aquasec.com/misconfig/\(.check | ascii_downcase)) | \(.message) | [\(.file | split("/")[2])](\($blob)/\(.file)) |"
+            ' "$RUNNER_TEMP/trivy.sarif"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: ${{ runner.temp }}/trivy.sarif

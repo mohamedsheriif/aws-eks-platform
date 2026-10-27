@@ -25,14 +25,17 @@ inputs = {
   }
 
   roles = {
-    # Pull requests: read-only, for terragrunt plan. Can write only the state lock files.
+    # Pull requests and main: read-only, for terragrunt plan. Can write only the state lock files.
     github-plan = {
       name              = "${local.env.project}-${local.env.env}-github-plan"
-      description       = "terragrunt plan from pull requests"
+      description       = "terragrunt plan from pull requests and main"
       oidc_provider_key = "github"
       audience          = "sts.amazonaws.com"
-      subjects          = ["repo:mohamedsheriif/aws-eks-platform:pull_request"]
-      policy_arns       = ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
+      subjects = [
+        "repo:mohamedsheriif/aws-eks-platform:pull_request",
+        "repo:mohamedsheriif/aws-eks-platform:ref:refs/heads/main",
+      ]
+      policy_arns = ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
       inline_policies = {
         state-lock = jsonencode({
           Version = "2012-10-17"
