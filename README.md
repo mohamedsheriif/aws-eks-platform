@@ -132,7 +132,7 @@ flowchart LR
 ├── modules/               One Terraform module per AWS service
 ├── scripts/
 │   ├── bootstrap.sh       One-time account setup: state bucket and CI roles
-│   └── security-scan.sh   Trivy scan of every unit with its real inputs
+│   └── scan-plans.sh      Trivy scan of each unit's plan, as one SARIF report
 └── live/
     └── dev/
         ├── env.hcl        Project, account, region, domain and tags
@@ -269,12 +269,13 @@ GitHub Actions, authenticated to AWS through OIDC (no stored keys):
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
-| [`ci.yml`](.github/workflows/ci.yml) | Pull request | **Format** (`terraform fmt`, `terragrunt hcl fmt`) and **Lint** (TFLint with the AWS ruleset) in parallel, then **Plan** per environment with a per-unit summary |
+| [`ci.yml`](.github/workflows/ci.yml) | Pull request, push to `main` | **Format** (`terraform fmt`, `terragrunt hcl fmt`) and **Lint** (TFLint with the AWS ruleset) in parallel, then **Plan** per environment, with each unit's plan scanned by **Trivy** |
 | [`cd.yml`](.github/workflows/cd.yml) | Push to `main` | **Apply** per environment, inside a GitHub environment that can require approval |
-| [`security.yml`](.github/workflows/security.yml) | Pull request, push to `main` | **Trivy** scan of every unit with its real inputs; findings go to the Security tab |
 
 - **Mock until AWS exists.** While the repository variable `AWS_DEPLOY_ENABLED` isn't `true`, plans run with
   `TG_MOCK=true` and apply is skipped. Setting it switches to real plans and applies.
+- **Security scan of the plan.** Trivy checks every unit's plan for AWS misconfigurations. Findings appear in
+  the job summary and the Security tab, linked to the unit, and don't block the build.
 - **Caching.** Terragrunt's provider cache (keyed on the lock files), Helm charts, the Terragrunt binary
   and TFLint plugins are cached, so only changed inputs are downloaded.
 - **Safe applies.** One apply per environment at a time, actions pinned to commit SHAs, and least-privilege
