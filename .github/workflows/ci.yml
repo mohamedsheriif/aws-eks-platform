@@ -1,0 +1,139 @@
+name: CI
+
+# Pull requests: check formatting, lint the modules and plan every environment.
+on:
+  pull_request:
+    paths:
+      - live/**
+      - modules/**
+      - .tflint.hcl
+      - .github/**
+
+# A new push to the same pull request cancels the run in progress.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: 1.13.3
+  TERRAGRUNT_VERSION: 0.90.0
+  TF_IN_AUTOMATION: "true"
+  TG_NON_INTERACTIVE: "true"
+  TG_NO_COLOR: "true"
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-iac
+        with:
+          terraform-version: ${{ env.TERRAFORM_VERSION }}
+          terragrunt-version: ${{ env.TERRAGRUNT_VERSION }}
+          cache: "false"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff modules
+
+      - name: Terragrunt hcl fmt
+        working-directory: live
+        run: terragrunt hcl fmt --check --diff
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Caches the plugins declared in .tflint.hcl.
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.65.0
+          cache: true
+
+      - name: Install plugins
+        run: tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: TFLint
+        run: tflint --recursive --chdir modules --config "$GITHUB_WORKSPACE/.tflint.hcl" --format compact
+
+  plan:
+    name: Plan (${{ matrix.environment }})
+    needs: [fmt, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # OIDC token for AWS
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev]
+    env:
+      # Until the AWS account exists (repository variable AWS_DEPLOY_ENABLED != "true"),
+      # plans run in mock mode: local state, fake credentials, mocked dependency outputs.
+      TG_MOCK: ${{ vars.AWS_DEPLOY_ENABLED == 'true' && 'false' || 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-iac
+        with:
+          terraform-version: ${{ env.TERRAFORM_VERSION }}
+          terragrunt-version: ${{ env.TERRAGRUNT_VERSION }}
+
+      - name: Read env.hcl
+        id: env
+        run: |
+          read_env() {
+            sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]*)\".*/\1/p" "live/${{ matrix.environment }}/env.hcl" | head -n 1
+          }
+          {
+            echo "project=$(read_env project)"
+            echo "region=$(read_env region)"
+            echo "account_id=$(read_env account_id)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        if: env.TG_MOCK == 'false'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.env.outputs.account_id }}:role/${{ steps.env.outputs.project }}-${{ matrix.environment }}-github-plan
+          aws-region: ${{ steps.env.outputs.region }}
+          allowed-account-ids: ${{ steps.env.outputs.account_id }}
+
+      - name: Terragrunt plan
+        working-directory: live/${{ matrix.environment }}
+        run: |
+          # The EKS API is private, so in-cluster units are only planned in mock mode.
+          queue_args=()
+          if [[ "$TG_MOCK" == "false" ]]; then
+            queue_args+=(--queue-exclude-dir 'helm-*')
+          fi
+          terragrunt run --all plan "${queue_args[@]}" -- -no-color 2>&1 | tee "$RUNNER_TEMP/plan.log"
+
+      - name: Summarize plan
+        if: always()
+        run: |
+          mode=$([[ "$TG_MOCK" == "true" ]] && echo "mock" || echo "AWS")
+          {
+            echo "### Plan: ${{ matrix.environment }} (${mode})"
+            echo
+            echo "| Unit | Result |"
+            echo "|---|---|"
+            sed -nE 's/.*\[([^]]+)\] terraform: (Plan: .*|No changes\..*)/| \1 | \2 |/p' "$RUNNER_TEMP/plan.log"
+          } >> "$GITHUB_STEP_SUMMARY"

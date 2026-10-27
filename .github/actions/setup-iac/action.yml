@@ -1,0 +1,70 @@
+name: Set up Terraform and Terragrunt
+description: Installs pinned Terraform and Terragrunt versions and restores the provider and Helm chart caches.
+
+inputs:
+  terraform-version:
+    description: Terraform version to install
+    required: true
+  terragrunt-version:
+    description: Terragrunt version to install
+    required: true
+  cache:
+    description: Restore and save the provider and Helm chart caches (not needed for fmt)
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        # The wrapper rewrites stdout, which breaks Terragrunt reading dependency outputs.
+        terraform_wrapper: false
+
+    - name: Restore Terragrunt binary
+      id: terragrunt-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.local/bin/terragrunt
+        key: terragrunt-${{ runner.os }}-${{ inputs.terragrunt-version }}
+
+    - name: Download Terragrunt
+      if: steps.terragrunt-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.terragrunt-version }}
+      run: |
+        base="https://github.com/gruntwork-io/terragrunt/releases/download/v${VERSION}"
+        cd "$(mktemp -d)"
+        curl -fsSLO "${base}/terragrunt_linux_amd64"
+        curl -fsSLO "${base}/SHA256SUMS"
+        grep ' terragrunt_linux_amd64$' SHA256SUMS | sha256sum --check
+        install -D -m 0755 terragrunt_linux_amd64 ~/.local/bin/terragrunt
+
+    - name: Add Terragrunt to PATH
+      shell: bash
+      run: |
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        # Terragrunt's provider cache server downloads each provider once and shares it
+        # across all units, which is safe when run --all initializes units in parallel.
+        echo "TG_PROVIDER_CACHE=true" >> "$GITHUB_ENV"
+        echo "TG_PROVIDER_CACHE_DIR=$HOME/.cache/terragrunt/providers" >> "$GITHUB_ENV"
+
+    # Providers only change when a lock file changes.
+    - name: Cache providers
+      if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/terragrunt/providers
+        key: providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: providers-${{ runner.os }}-
+
+    # Charts only change when a Helm unit's chart versions change.
+    - name: Cache Helm charts
+      if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/helm
+        key: helm-${{ runner.os }}-${{ hashFiles('live/*/helm-*/terragrunt.hcl') }}
+        restore-keys: helm-${{ runner.os }}-

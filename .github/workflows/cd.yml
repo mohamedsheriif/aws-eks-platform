@@ -1,0 +1,74 @@
+name: CD
+
+# Merges to main: apply every environment. Each job runs in a GitHub environment of the
+# same name, which can require approval and is the only thing the apply role trusts.
+on:
+  push:
+    branches: [main]
+    paths:
+      - live/**
+      - modules/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: 1.13.3
+  TERRAGRUNT_VERSION: 0.90.0
+  TF_IN_AUTOMATION: "true"
+  TG_NON_INTERACTIVE: "true"
+  TG_NO_COLOR: "true"
+
+jobs:
+  apply:
+    name: Apply (${{ matrix.environment }})
+    # Skipped until the AWS account exists.
+    if: vars.AWS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: ${{ matrix.environment }}
+    # Never run two applies against the same environment; queue them instead.
+    concurrency:
+      group: apply-${{ matrix.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # OIDC token for AWS
+    strategy:
+      max-parallel: 1
+      matrix:
+        environment: [dev]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-iac
+        with:
+          terraform-version: ${{ env.TERRAFORM_VERSION }}
+          terragrunt-version: ${{ env.TERRAGRUNT_VERSION }}
+
+      - name: Read env.hcl
+        id: env
+        run: |
+          read_env() {
+            sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]*)\".*/\1/p" "live/${{ matrix.environment }}/env.hcl" | head -n 1
+          }
+          {
+            echo "project=$(read_env project)"
+            echo "region=$(read_env region)"
+            echo "account_id=$(read_env account_id)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.env.outputs.account_id }}:role/${{ steps.env.outputs.project }}-${{ matrix.environment }}-github-apply
+          aws-region: ${{ steps.env.outputs.region }}
+          allowed-account-ids: ${{ steps.env.outputs.account_id }}
+
+      # The EKS API is private, so in-cluster units are applied from the tailnet.
+      - name: Terragrunt apply
+        working-directory: live/${{ matrix.environment }}
+        run: terragrunt run --all apply --queue-exclude-dir 'helm-*' -- -no-color

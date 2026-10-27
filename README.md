@@ -128,6 +128,7 @@ flowchart LR
 
 ```
 .
+├── .github/               CI/CD workflows and a shared setup action
 ├── modules/               One Terraform module per AWS service
 ├── scripts/
 │   └── bootstrap.sh       One-time account setup: state bucket and CI roles
@@ -263,17 +264,22 @@ terragrunt run --all apply --queue-include-dir 'helm-*' --queue-strict-include
 
 ## CI/CD
 
-Planned: a GitHub Actions workflow that runs on every pull request:
+GitHub Actions, authenticated to AWS through OIDC (no stored keys):
 
-- `terraform fmt` and `terragrunt hcl fmt` checks
-- `tflint`
-- A security scan of the Terraform code
-- `TG_MOCK=true terragrunt run --all plan`
+| Workflow | Trigger | Jobs |
+|---|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | Pull request | **Format** (`terraform fmt`, `terragrunt hcl fmt`) and **Lint** (TFLint with the AWS ruleset) in parallel, then **Plan** per environment with a per-unit summary |
+| [`cd.yml`](.github/workflows/cd.yml) | Push to `main` | **Apply** per environment, inside a GitHub environment that can require approval |
 
-Applies will authenticate to AWS through GitHub OIDC, with no long-lived keys.
+- **Mock until AWS exists.** While the repository variable `AWS_DEPLOY_ENABLED` isn't `true`, plans run with
+  `TG_MOCK=true` and apply is skipped. Setting it switches to real plans and applies.
+- **Caching.** Terragrunt's provider cache (keyed on the lock files), Helm charts, the Terragrunt binary
+  and TFLint plugins are cached, so only changed inputs are downloaded.
+- **Safe applies.** One apply per environment at a time, actions pinned to commit SHAs, and least-privilege
+  job permissions.
+- **In-cluster units** (`helm-*`) are applied from the tailnet, since the EKS API is private.
 
 ## Roadmap
 
 - [ ] Prod environment
-- [ ] CI pipeline
 - [ ] Account baseline: CloudTrail, GuardDuty, AWS Config, AWS Budgets
