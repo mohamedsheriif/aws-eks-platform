@@ -1,0 +1,15 @@
+config {
+  # Modules are linted on their own; units are Terragrunt, not Terraform.
+  call_module_type = "none"
+}
+
+plugin "terraform" {
+  enabled = true
+  preset  = "recommended"
+}
+
+plugin "aws" {
+  enabled = true
+  version = "0.50.0"
+  source  = "github.com/terraform-linters/tflint-ruleset-aws"
+}
