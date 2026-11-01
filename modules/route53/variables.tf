@@ -28,3 +28,24 @@ variable "zones" {
   }))
   default = {}
 }
+
+variable "records" {
+  description = "Map of DNS records to create in the zones above"
+  type = map(object({
+    # (Required) Key of the zones entry the record belongs to.
+    zone_key = string
+
+    # (Required) Fully qualified record name, e.g. "dev.example.com".
+    name = string
+
+    # (Required) Record type, e.g. "NS", "CNAME", "TXT".
+    type = string
+
+    # (Optional) Time to live in seconds. Defaults to 300.
+    ttl = optional(number, 300)
+
+    # (Required) Record values.
+    records = list(string)
+  }))
+  default = {}
+}

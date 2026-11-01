@@ -9,3 +9,13 @@ resource "aws_route53_zone" "this" {
     Name = format("%s-%s-%s-zone", var.project, var.env, each.key)
   }, var.tags)
 }
+
+resource "aws_route53_record" "this" {
+  for_each = var.records
+
+  zone_id = aws_route53_zone.this[each.value.zone_key].zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = each.value.ttl
+  records = each.value.records
+}
