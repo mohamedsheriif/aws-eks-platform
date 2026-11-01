@@ -15,7 +15,7 @@ inputs = {
   env     = local.env.env
   tags    = local.env.tags
 
-  # Delegated from the prod account's parent zone with an NS record.
+  # Delegated from the prod account's shopflow.com zone with an NS record (live/prod/route53).
   zones = {
     main = {
       name          = local.env.domain
