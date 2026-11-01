@@ -427,5 +427,306 @@ inputs = {
         })
       }
     }
+
+    # Karpenter: launches and removes Spot nodes for the apps workload. Permissions follow
+    # Karpenter's reference policy and are scoped to this cluster's tags, node role and
+    # interruption queue.
+    karpenter-controller = {
+      name         = "${local.env.project}-${local.env.env}-karpenter-controller"
+      description  = "kube-system/karpenter"
+      pod_identity = true
+      inline_policies = {
+        karpenter-controller = jsonencode({
+          Version = "2012-10-17"
+          Statement = [
+            {
+              Sid    = "AllowScopedEC2InstanceAccessActions"
+              Effect = "Allow"
+              Resource = [
+                "arn:aws:ec2:${local.env.region}::image/*",
+                "arn:aws:ec2:${local.env.region}::snapshot/*",
+                "arn:aws:ec2:${local.env.region}:*:security-group/*",
+                "arn:aws:ec2:${local.env.region}:*:subnet/*",
+                "arn:aws:ec2:${local.env.region}:*:capacity-reservation/*",
+                "arn:aws:ec2:${local.env.region}:*:placement-group/*",
+              ]
+              Action = [
+                "ec2:RunInstances",
+                "ec2:CreateFleet",
+              ]
+            },
+            {
+              Sid      = "AllowScopedEC2LaunchTemplateAccessActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:ec2:${local.env.region}:*:launch-template/*"
+              Action = [
+                "ec2:RunInstances",
+                "ec2:CreateFleet",
+              ]
+              Condition = {
+                StringEquals = {
+                  "aws:ResourceTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                }
+                StringLike = {
+                  "aws:ResourceTag/karpenter.sh/nodepool" = "*"
+                }
+              }
+            },
+            {
+              Sid    = "AllowScopedEC2InstanceActionsWithTags"
+              Effect = "Allow"
+              Resource = [
+                "arn:aws:ec2:${local.env.region}:*:fleet/*",
+                "arn:aws:ec2:${local.env.region}:*:instance/*",
+                "arn:aws:ec2:${local.env.region}:*:volume/*",
+                "arn:aws:ec2:${local.env.region}:*:network-interface/*",
+                "arn:aws:ec2:${local.env.region}:*:launch-template/*",
+                "arn:aws:ec2:${local.env.region}:*:spot-instances-request/*",
+              ]
+              Action = [
+                "ec2:RunInstances",
+                "ec2:CreateFleet",
+                "ec2:CreateLaunchTemplate",
+              ]
+              Condition = {
+                StringEquals = {
+                  "aws:RequestTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                  "aws:RequestTag/eks:eks-cluster-name"                                        = "${local.env.project}-${local.env.env}"
+                }
+                StringLike = {
+                  "aws:RequestTag/karpenter.sh/nodepool" = "*"
+                }
+              }
+            },
+            {
+              Sid    = "AllowScopedResourceCreationTagging"
+              Effect = "Allow"
+              Resource = [
+                "arn:aws:ec2:${local.env.region}:*:fleet/*",
+                "arn:aws:ec2:${local.env.region}:*:instance/*",
+                "arn:aws:ec2:${local.env.region}:*:volume/*",
+                "arn:aws:ec2:${local.env.region}:*:network-interface/*",
+                "arn:aws:ec2:${local.env.region}:*:launch-template/*",
+                "arn:aws:ec2:${local.env.region}:*:spot-instances-request/*",
+              ]
+              Action = "ec2:CreateTags"
+              Condition = {
+                StringEquals = {
+                  "aws:RequestTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                  "aws:RequestTag/eks:eks-cluster-name"                                        = "${local.env.project}-${local.env.env}"
+                  "ec2:CreateAction" = [
+                    "RunInstances",
+                    "CreateFleet",
+                    "CreateLaunchTemplate",
+                  ]
+                }
+                StringLike = {
+                  "aws:RequestTag/karpenter.sh/nodepool" = "*"
+                }
+              }
+            },
+            {
+              Sid      = "AllowScopedResourceTagging"
+              Effect   = "Allow"
+              Resource = "arn:aws:ec2:${local.env.region}:*:instance/*"
+              Action   = "ec2:CreateTags"
+              Condition = {
+                StringEquals = {
+                  "aws:ResourceTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                }
+                StringLike = {
+                  "aws:ResourceTag/karpenter.sh/nodepool" = "*"
+                }
+                StringEqualsIfExists = {
+                  "aws:RequestTag/eks:eks-cluster-name" = "${local.env.project}-${local.env.env}"
+                }
+                "ForAllValues:StringEquals" = {
+                  "aws:TagKeys" = [
+                    "eks:eks-cluster-name",
+                    "karpenter.sh/nodeclaim",
+                    "Name",
+                  ]
+                }
+              }
+            },
+            {
+              Sid    = "AllowScopedDeletion"
+              Effect = "Allow"
+              Resource = [
+                "arn:aws:ec2:${local.env.region}:*:instance/*",
+                "arn:aws:ec2:${local.env.region}:*:launch-template/*",
+              ]
+              Action = [
+                "ec2:TerminateInstances",
+                "ec2:RebootInstances",
+                "ec2:DeleteLaunchTemplate",
+              ]
+              Condition = {
+                StringEquals = {
+                  "aws:ResourceTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                }
+                StringLike = {
+                  "aws:ResourceTag/karpenter.sh/nodepool" = "*"
+                }
+              }
+            },
+            {
+              Sid      = "AllowPassingInstanceRole"
+              Effect   = "Allow"
+              Resource = "arn:aws:iam::${local.env.account_id}:role/${local.env.project}-${local.env.env}-karpenter-node"
+              Action   = "iam:PassRole"
+              Condition = {
+                StringEquals = {
+                  "iam:PassedToService" = [
+                    "ec2.amazonaws.com",
+                    "ec2.amazonaws.com.cn",
+                  ]
+                }
+              }
+            },
+            {
+              Sid      = "AllowScopedInstanceProfileCreationActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:iam::${local.env.account_id}:instance-profile/*"
+              Action   = ["iam:CreateInstanceProfile"]
+              Condition = {
+                StringEquals = {
+                  "aws:RequestTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                  "aws:RequestTag/eks:eks-cluster-name"                                        = "${local.env.project}-${local.env.env}"
+                  "aws:RequestTag/topology.kubernetes.io/region"                               = "${local.env.region}"
+                }
+                StringLike = {
+                  "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass" = "*"
+                }
+              }
+            },
+            {
+              Sid      = "AllowScopedInstanceProfileTagActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:iam::${local.env.account_id}:instance-profile/*"
+              Action   = ["iam:TagInstanceProfile"]
+              Condition = {
+                StringEquals = {
+                  "aws:ResourceTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                  "aws:ResourceTag/topology.kubernetes.io/region"                               = "${local.env.region}"
+                  "aws:RequestTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}"  = "owned"
+                  "aws:RequestTag/eks:eks-cluster-name"                                         = "${local.env.project}-${local.env.env}"
+                  "aws:RequestTag/topology.kubernetes.io/region"                                = "${local.env.region}"
+                }
+                StringLike = {
+                  "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass" = "*"
+                  "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass"  = "*"
+                }
+              }
+            },
+            {
+              Sid      = "AllowScopedInstanceProfileActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:iam::${local.env.account_id}:instance-profile/*"
+              Action = [
+                "iam:AddRoleToInstanceProfile",
+                "iam:RemoveRoleFromInstanceProfile",
+                "iam:DeleteInstanceProfile",
+              ]
+              Condition = {
+                StringEquals = {
+                  "aws:ResourceTag/kubernetes.io/cluster/${local.env.project}-${local.env.env}" = "owned"
+                  "aws:ResourceTag/topology.kubernetes.io/region"                               = "${local.env.region}"
+                }
+                StringLike = {
+                  "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass" = "*"
+                }
+              }
+            },
+            {
+              Sid      = "AllowAPIServerEndpointDiscovery"
+              Effect   = "Allow"
+              Resource = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}"
+              Action   = "eks:DescribeCluster"
+            },
+            {
+              Sid      = "AllowInterruptionQueueActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:sqs:${local.env.region}:${local.env.account_id}:${local.env.project}-${local.env.env}-karpenter"
+              Action = [
+                "sqs:DeleteMessage",
+                "sqs:GetQueueUrl",
+                "sqs:ReceiveMessage",
+              ]
+            },
+            {
+              Sid      = "AllowZonalShiftStatusReadOnly"
+              Effect   = "Allow"
+              Resource = "*"
+              Action   = ["arc-zonal-shift:GetManagedResource"]
+              Condition = {
+                StringEquals = {
+                  "arc-zonal-shift:ResourceIdentifier" = "arn:aws:eks:${local.env.region}:${local.env.account_id}:cluster/${local.env.project}-${local.env.env}"
+                }
+              }
+            },
+            {
+              Sid      = "AllowRegionalReadActions"
+              Effect   = "Allow"
+              Resource = "*"
+              Action = [
+                "ec2:DescribeCapacityReservations",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeInstanceTypeOfferings",
+                "ec2:DescribeInstanceTypes",
+                "ec2:DescribeLaunchTemplates",
+                "ec2:DescribePlacementGroups",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSpotPriceHistory",
+                "ec2:DescribeSubnets",
+              ]
+              Condition = {
+                StringEquals = {
+                  "aws:RequestedRegion" = "${local.env.region}"
+                }
+              }
+            },
+            {
+              Sid      = "AllowSSMReadActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:ssm:${local.env.region}::parameter/aws/service/*"
+              Action   = "ssm:GetParameter"
+            },
+            {
+              Sid      = "AllowPricingReadActions"
+              Effect   = "Allow"
+              Resource = "*"
+              Action   = "pricing:GetProducts"
+            },
+            {
+              Sid      = "AllowUnscopedInstanceProfileListAction"
+              Effect   = "Allow"
+              Resource = "*"
+              Action   = "iam:ListInstanceProfiles"
+            },
+            {
+              Sid      = "AllowInstanceProfileReadActions"
+              Effect   = "Allow"
+              Resource = "arn:aws:iam::${local.env.account_id}:instance-profile/*"
+              Action   = "iam:GetInstanceProfile"
+            },
+          ]
+        })
+      }
+    }
+
+    # Nodes launched by Karpenter. Karpenter creates their instance profile from this role.
+    karpenter-node = {
+      name        = "${local.env.project}-${local.env.env}-karpenter-node"
+      description = "EC2 nodes launched by Karpenter"
+      service     = "ec2.amazonaws.com"
+      policy_arns = [
+        "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+        "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+        "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+      ]
+    }
   }
 }

@@ -45,5 +45,36 @@ inputs = {
         }]
       })
     }
+
+    # Spot interruption warnings, rebalance recommendations, instance state changes and
+    # AWS Health events, sent by EventBridge (eventbridge unit) and read by Karpenter so it
+    # can drain a node before it disappears. Messages are only useful for a few minutes.
+    # SQS-managed encryption: EventBridge can't use a customer managed key without extra
+    # key policy grants, and the messages contain no application data.
+    karpenter = {
+      name                      = "${local.env.project}-${local.env.env}-karpenter"
+      message_retention_seconds = 300
+
+      policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Sid       = "EventBridge"
+            Effect    = "Allow"
+            Principal = { Service = ["events.amazonaws.com", "sqs.amazonaws.com"] }
+            Action    = "sqs:SendMessage"
+            Resource  = "arn:aws:sqs:${local.env.region}:${local.env.account_id}:${local.env.project}-${local.env.env}-karpenter"
+          },
+          {
+            Sid       = "DenyInsecureTransport"
+            Effect    = "Deny"
+            Principal = "*"
+            Action    = "sqs:*"
+            Resource  = "arn:aws:sqs:${local.env.region}:${local.env.account_id}:${local.env.project}-${local.env.env}-karpenter"
+            Condition = { Bool = { "aws:SecureTransport" = "false" } }
+          },
+        ]
+      })
+    }
   }
 }

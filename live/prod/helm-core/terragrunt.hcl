@@ -46,9 +46,28 @@ dependency "kms" {
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
 }
 
+dependency "iam_roles" {
+  config_path = "../iam-roles"
+
+  mock_outputs = {
+    role_names = { karpenter-node = "shopflow-prod-karpenter-node" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
+dependency "sqs" {
+  config_path = "../sqs"
+
+  mock_outputs = {
+    queue_names = { karpenter = "shopflow-prod-karpenter" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
 # Controllers, CRDs and cluster-wide objects that helm-platform builds on:
 # its Ingresses need the ALB controller webhook and IngressClasses, its PVCs need
 # the gp3 StorageClass, and its ServiceMonitors need the Prometheus Operator CRDs.
+# Karpenter adds Spot nodes for application pods.
 inputs = {
   releases = {
     aws-load-balancer-controller = {
@@ -75,6 +94,20 @@ inputs = {
       values     = [file("${get_terragrunt_dir()}/values/external-secrets.yaml")]
     }
 
+    karpenter = {
+      name             = "karpenter"
+      repository       = "oci://public.ecr.aws/karpenter"
+      chart            = "karpenter"
+      version          = "1.15.1"
+      namespace        = "kube-system"
+      create_namespace = false
+      values = [templatefile("${get_terragrunt_dir()}/values/karpenter.yaml", {
+        cluster_name       = dependency.eks.outputs.cluster_names["main"]
+        interruption_queue = dependency.sqs.outputs.queue_names["karpenter"]
+        region             = local.env.region
+      })]
+    }
+
     # Installed on its own so the CRDs exist before any chart ships a ServiceMonitor;
     # kube-prometheus-stack runs with crds.enabled = false.
     prometheus-operator-crds = {
@@ -87,6 +120,14 @@ inputs = {
   }
 
   manifests = {
+    ec2nodeclass-default = templatefile("${get_terragrunt_dir()}/manifests/ec2nodeclass-default.yaml", {
+      cluster_name = dependency.eks.outputs.cluster_names["main"]
+      node_role    = dependency.iam_roles.outputs.role_names["karpenter-node"]
+      kms_key_arn  = dependency.kms.outputs.kms_key_arns["ebs"]
+      tags         = jsonencode(local.env.tags)
+    })
+    nodepool-apps-spot = file("${get_terragrunt_dir()}/manifests/nodepool-apps-spot.yaml")
+
     storageclass-gp3 = templatefile("${get_terragrunt_dir()}/manifests/storageclass-gp3.yaml", {
       kms_key_arn = dependency.kms.outputs.kms_key_arns["ebs"]
     })

@@ -37,8 +37,9 @@ dependency "kms" {
 
   mock_outputs = {
     kms_key_arns = {
-      eks = "arn:aws:kms:us-east-1:222222222222:key/mock-eks"
-      ebs = "arn:aws:kms:us-east-1:222222222222:key/mock-ebs"
+      eks  = "arn:aws:kms:us-east-1:222222222222:key/mock-eks"
+      ebs  = "arn:aws:kms:us-east-1:222222222222:key/mock-ebs"
+      logs = "arn:aws:kms:us-east-1:222222222222:key/mock-logs"
     }
   }
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
@@ -59,6 +60,8 @@ dependency "iam_roles" {
       external-dns                 = "arn:aws:iam::222222222222:role/mock-external-dns"
       external-secrets             = "arn:aws:iam::222222222222:role/mock-external-secrets"
       loki                         = "arn:aws:iam::222222222222:role/mock-loki"
+      karpenter-controller         = "arn:aws:iam::222222222222:role/mock-karpenter-controller"
+      karpenter-node               = "arn:aws:iam::222222222222:role/mock-karpenter-node"
     }
   }
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
@@ -86,15 +89,19 @@ inputs = {
 
   secrets_encryption_kms_key_arn = dependency.kms.outputs.kms_key_arns["eks"]
 
-  # Private API endpoint only, reachable through Tailscale. No control plane logs in dev.
+  # Private API endpoint only, reachable through Tailscale. All control plane log types go to
+  # CloudWatch for 90 days. The cluster security group is tagged for Karpenter discovery.
   eks_clusters = {
     main = {
-      name                = "${local.env.project}-${local.env.env}"
-      version             = "1.34"
-      role_arn            = dependency.iam_roles.outputs.role_arns["eks-cluster"]
-      subnet_ids          = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
-      security_group_ids  = [dependency.security_groups.outputs.security_group_ids["eks-api"]]
-      karpenter_discovery = false
+      name                      = "${local.env.project}-${local.env.env}"
+      version                   = "1.34"
+      role_arn                  = dependency.iam_roles.outputs.role_arns["eks-cluster"]
+      subnet_ids                = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
+      security_group_ids        = [dependency.security_groups.outputs.security_group_ids["eks-api"]]
+      enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+      log_retention_days        = 90
+      logs_kms_key_arn          = dependency.kms.outputs.kms_key_arns["logs"]
+      karpenter_discovery       = true
     }
   }
 
@@ -105,29 +112,29 @@ inputs = {
       name            = "system"
       node_role_arn   = dependency.iam_roles.outputs.role_arns["eks-node"]
       subnet_ids      = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
-      instance_types  = ["t4g.medium"]
+      instance_types  = ["t4g.large"]
       ami_type        = "AL2023_ARM_64_STANDARD"
-      min_size        = 1
-      max_size        = 1
-      desired_size    = 1
-      disk_size       = 30
+      min_size        = 2
+      max_size        = 3
+      desired_size    = 2
+      disk_size       = 50
       ebs_kms_key_arn = dependency.kms.outputs.kms_key_arns["ebs"]
       max_pods        = 110
       labels          = { role = "system" }
     }
 
-    # Application pods.
+    # On-demand baseline for application pods. Extra capacity comes from Karpenter on Spot.
     apps = {
       cluster_key     = "main"
       name            = "apps"
       node_role_arn   = dependency.iam_roles.outputs.role_arns["eks-node"]
       subnet_ids      = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
-      instance_types  = ["t4g.medium"]
+      instance_types  = ["t4g.large"]
       ami_type        = "AL2023_ARM_64_STANDARD"
-      min_size        = 1
-      max_size        = 3
-      desired_size    = 1
-      disk_size       = 30
+      min_size        = 2
+      max_size        = 2
+      desired_size    = 2
+      disk_size       = 50
       ebs_kms_key_arn = dependency.kms.outputs.kms_key_arns["ebs"]
       max_pods        = 110
       labels          = { role = "apps" }
@@ -195,7 +202,7 @@ inputs = {
     }
   }
 
-  # Roles assumed by the admins and developers IAM groups.
+  # Roles assumed by the admins and developers IAM groups, and the role of Karpenter's nodes.
   access_entries = {
     admin = {
       cluster_key   = "main"
@@ -204,6 +211,11 @@ inputs = {
     developer = {
       cluster_key   = "main"
       principal_arn = dependency.iam_roles.outputs.role_arns["eks-developer"]
+    }
+    karpenter-node = {
+      cluster_key   = "main"
+      principal_arn = dependency.iam_roles.outputs.role_arns["karpenter-node"]
+      type          = "EC2_LINUX"
     }
   }
 
@@ -242,6 +254,12 @@ inputs = {
       namespace       = "external-secrets"
       service_account = "external-secrets"
       role_arn        = dependency.iam_roles.outputs.role_arns["external-secrets"]
+    }
+    karpenter = {
+      cluster_key     = "main"
+      namespace       = "kube-system"
+      service_account = "karpenter"
+      role_arn        = dependency.iam_roles.outputs.role_arns["karpenter-controller"]
     }
     loki = {
       cluster_key     = "main"
