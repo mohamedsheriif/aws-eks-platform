@@ -1,0 +1,106 @@
+# CRDs come from the prometheus-operator-crds release in helm-core.
+crds:
+  enabled: false
+
+# Managed control plane: these components can't be scraped on EKS.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+# kube-proxy binds its metrics to 127.0.0.1 on EKS.
+kubeProxy:
+  enabled: false
+
+# Dev has no alert routing.
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    retentionSize: 18GB
+    # Pick up ServiceMonitors, PodMonitors and rules from every release, not just this one.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+    nodeSelector:
+      role: system
+    resources:
+      requests:
+        cpu: 50m
+        memory: 320Mi
+      limits:
+        memory: 768Mi
+
+prometheusOperator:
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      memory: 96Mi
+
+kube-state-metrics:
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      memory: 96Mi
+
+# Runs on every node.
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      memory: 48Mi
+
+grafana:
+  # Synced by ESO from Secrets Manager (helm-core).
+  admin:
+    existingSecret: grafana-admin
+  ingress:
+    enabled: true
+    ingressClassName: alb-internal
+    annotations:
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+      alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    hosts:
+      - grafana.${domain}
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki-gateway.logging.svc.cluster.local
+  nodeSelector:
+    role: system
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  # Dashboard and datasource loaders.
+  sidecar:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+      limits:
+        memory: 64Mi

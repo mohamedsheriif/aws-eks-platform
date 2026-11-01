@@ -1,0 +1,20 @@
+# One shared internet-facing ALB, usable only by Ingresses in the apps namespace.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: IngressClassParams
+metadata:
+  name: alb-public
+spec:
+  scheme: internet-facing
+  targetType: ip
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: apps
+  group:
+    name: ${group}
+  certificateArn:
+    - ${certificate_arn}
+  sslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+  sslRedirectPort: "443"
+  loadBalancerAttributes:
+    - key: routing.http.drop_invalid_header_fields.enabled
+      value: "true"
