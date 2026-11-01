@@ -1,15 +1,10 @@
 name: CI
 
 # Check formatting, lint the modules, then plan every environment and scan the plans with
-# Trivy. Runs on main too, so Security > Code scanning tracks the default branch.
+# Trivy. Runs on every pull request so its checks can be required, and on main so
+# Security > Code scanning tracks the default branch.
 on:
   pull_request:
-    paths:
-      - live/**
-      - modules/**
-      - scripts/scan-plans.sh
-      - .tflint.hcl
-      - .github/**
   push:
     branches: [main]
     paths:
