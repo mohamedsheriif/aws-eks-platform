@@ -15,7 +15,7 @@ dependency "vpc" {
 
   mock_outputs = {
     vpc_ids         = { main = "vpc-mock" }
-    vpc_cidr_blocks = { main = "10.10.0.0/16" }
+    vpc_cidr_blocks = { main = "10.20.0.0/16" }
   }
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
 }

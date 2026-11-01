@@ -17,6 +17,7 @@ dependency "vpc" {
     subnet_ids = {
       app-us-east-1a = "subnet-mock-app-a"
       app-us-east-1b = "subnet-mock-app-b"
+      app-us-east-1c = "subnet-mock-app-c"
     }
   }
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
@@ -91,7 +92,7 @@ inputs = {
       name                = "${local.env.project}-${local.env.env}"
       version             = "1.34"
       role_arn            = dependency.iam_roles.outputs.role_arns["eks-cluster"]
-      subnet_ids          = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"]]
+      subnet_ids          = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
       security_group_ids  = [dependency.security_groups.outputs.security_group_ids["eks-api"]]
       karpenter_discovery = false
     }
@@ -103,7 +104,7 @@ inputs = {
       cluster_key     = "main"
       name            = "system"
       node_role_arn   = dependency.iam_roles.outputs.role_arns["eks-node"]
-      subnet_ids      = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"]]
+      subnet_ids      = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
       instance_types  = ["t4g.medium"]
       ami_type        = "AL2023_ARM_64_STANDARD"
       min_size        = 1
@@ -120,7 +121,7 @@ inputs = {
       cluster_key     = "main"
       name            = "apps"
       node_role_arn   = dependency.iam_roles.outputs.role_arns["eks-node"]
-      subnet_ids      = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"]]
+      subnet_ids      = [dependency.vpc.outputs.subnet_ids["app-us-east-1a"], dependency.vpc.outputs.subnet_ids["app-us-east-1b"], dependency.vpc.outputs.subnet_ids["app-us-east-1c"]]
       instance_types  = ["t4g.medium"]
       ami_type        = "AL2023_ARM_64_STANDARD"
       min_size        = 1

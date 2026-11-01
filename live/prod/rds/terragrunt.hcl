@@ -17,6 +17,7 @@ dependency "vpc" {
     subnet_ids = {
       private-us-east-1a = "subnet-mock-private-a"
       private-us-east-1b = "subnet-mock-private-b"
+      private-us-east-1c = "subnet-mock-private-c"
     }
   }
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
@@ -53,7 +54,7 @@ inputs = {
     main = {
       name        = "${local.env.project}-${local.env.env}-postgres"
       description = "Private subnets for PostgreSQL"
-      subnet_keys = ["private-us-east-1a", "private-us-east-1b"]
+      subnet_keys = ["private-us-east-1a", "private-us-east-1b", "private-us-east-1c"]
     }
   }
 

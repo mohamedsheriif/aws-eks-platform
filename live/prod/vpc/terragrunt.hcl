@@ -10,62 +10,88 @@ terraform {
   source = "${get_repo_root()}/modules/vpc"
 }
 
+dependency "s3_logs" {
+  config_path = "../s3-logs"
+
+  mock_outputs = {
+    bucket_arns = { logs = "arn:aws:s3:::shopflow-prod-logs-222222222222" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
 inputs = {
   project = local.env.project
   env     = local.env.env
   tags    = local.env.tags
 
+  # 10.20.0.0/16 doesn't overlap dev's 10.10.0.0/16, so both Tailscale routers can
+  # advertise their VPC to the same tailnet.
   vpc = {
     main = {
-      name       = "${local.env.project}-${local.env.env}"
-      create_igw = true
-      cidr_block = "10.10.0.0/16"
+      name                    = "${local.env.project}-${local.env.env}"
+      create_igw              = true
+      cidr_block              = "10.20.0.0/16"
+      flow_logs_enabled       = true
+      flow_logs_s3_bucket_arn = dependency.s3_logs.outputs.bucket_arns["logs"]
     }
   }
 
-  # One zonal NAT Gateway in dev to keep cost down.
-  eip = {
-    nat = {}
-  }
-
+  # A regional NAT Gateway spans every AZ, so losing one AZ doesn't cut egress for the others.
   nat = {
     main = {
-      availability_mode = "zonal"
-      eip_key           = "nat"
-      subnet_key        = "public-us-east-1a"
+      availability_mode = "regional"
+      vpc_key           = "main"
     }
   }
 
   subnets = {
-    # Public: ALB, NAT Gateway, Tailscale router.
+    # Public: ALBs and the Tailscale router.
     public-us-east-1a = {
       vpc_key           = "main"
       availability_zone = "us-east-1a"
-      cidr_block        = "10.10.0.0/24"
+      cidr_block        = "10.20.0.0/24"
       tags              = { "kubernetes.io/role/elb" = "1" }
     }
     public-us-east-1b = {
       vpc_key           = "main"
       availability_zone = "us-east-1b"
-      cidr_block        = "10.10.1.0/24"
+      cidr_block        = "10.20.1.0/24"
+      tags              = { "kubernetes.io/role/elb" = "1" }
+    }
+    public-us-east-1c = {
+      vpc_key           = "main"
+      availability_zone = "us-east-1c"
+      cidr_block        = "10.20.2.0/24"
       tags              = { "kubernetes.io/role/elb" = "1" }
     }
 
     # App: EKS nodes and pods. /19 per AZ leaves room for VPC CNI prefix delegation.
+    # Karpenter launches nodes in subnets with the discovery tag.
     app-us-east-1a = {
       vpc_key           = "main"
       availability_zone = "us-east-1a"
-      cidr_block        = "10.10.32.0/19"
+      cidr_block        = "10.20.32.0/19"
       tags = {
         "kubernetes.io/role/internal-elb" = "1"
+        "karpenter.sh/discovery"          = "${local.env.project}-${local.env.env}"
       }
     }
     app-us-east-1b = {
       vpc_key           = "main"
       availability_zone = "us-east-1b"
-      cidr_block        = "10.10.64.0/19"
+      cidr_block        = "10.20.64.0/19"
       tags = {
         "kubernetes.io/role/internal-elb" = "1"
+        "karpenter.sh/discovery"          = "${local.env.project}-${local.env.env}"
+      }
+    }
+    app-us-east-1c = {
+      vpc_key           = "main"
+      availability_zone = "us-east-1c"
+      cidr_block        = "10.20.96.0/19"
+      tags = {
+        "kubernetes.io/role/internal-elb" = "1"
+        "karpenter.sh/discovery"          = "${local.env.project}-${local.env.env}"
       }
     }
 
@@ -73,32 +99,37 @@ inputs = {
     private-us-east-1a = {
       vpc_key           = "main"
       availability_zone = "us-east-1a"
-      cidr_block        = "10.10.10.0/24"
+      cidr_block        = "10.20.10.0/24"
     }
     private-us-east-1b = {
       vpc_key           = "main"
       availability_zone = "us-east-1b"
-      cidr_block        = "10.10.11.0/24"
+      cidr_block        = "10.20.11.0/24"
+    }
+    private-us-east-1c = {
+      vpc_key           = "main"
+      availability_zone = "us-east-1c"
+      cidr_block        = "10.20.12.0/24"
     }
   }
 
   route_tables = {
     public = {
       vpc_key     = "main"
-      subnet_keys = ["public-us-east-1a", "public-us-east-1b"]
+      subnet_keys = ["public-us-east-1a", "public-us-east-1b", "public-us-east-1c"]
       use_igw     = true
       routes      = [{ cidr_block = "0.0.0.0/0" }]
     }
     app = {
       vpc_key     = "main"
-      subnet_keys = ["app-us-east-1a", "app-us-east-1b"]
+      subnet_keys = ["app-us-east-1a", "app-us-east-1b", "app-us-east-1c"]
       use_nat     = true
       nat_key     = "main"
       routes      = [{ cidr_block = "0.0.0.0/0" }]
     }
     private = {
       vpc_key     = "main"
-      subnet_keys = ["private-us-east-1a", "private-us-east-1b"]
+      subnet_keys = ["private-us-east-1a", "private-us-east-1b", "private-us-east-1c"]
     }
   }
 

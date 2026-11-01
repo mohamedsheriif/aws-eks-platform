@@ -17,6 +17,7 @@ dependency "vpc" {
     subnet_ids = {
       private-us-east-1a = "subnet-mock-private-a"
       private-us-east-1b = "subnet-mock-private-b"
+      private-us-east-1c = "subnet-mock-private-c"
     }
   }
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
@@ -48,7 +49,7 @@ inputs = {
   subnet_groups = {
     main = {
       name       = "${local.env.project}-${local.env.env}-valkey"
-      subnet_ids = [dependency.vpc.outputs.subnet_ids["private-us-east-1a"], dependency.vpc.outputs.subnet_ids["private-us-east-1b"]]
+      subnet_ids = [dependency.vpc.outputs.subnet_ids["private-us-east-1a"], dependency.vpc.outputs.subnet_ids["private-us-east-1b"], dependency.vpc.outputs.subnet_ids["private-us-east-1c"]]
     }
   }
 

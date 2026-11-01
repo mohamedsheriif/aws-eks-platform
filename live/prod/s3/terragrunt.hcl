@@ -37,10 +37,13 @@ inputs = {
     # Static assets, readable only by the assets CloudFront distribution.
     assets = {
       name               = "${local.env.project}-${local.env.env}-assets-${local.env.account_id}"
-      force_destroy      = true
+      versioning_enabled = true
       sse_algorithm      = "aws:kms"
       kms_master_key_id  = dependency.kms.outputs.kms_key_arns["s3"]
       bucket_key_enabled = true
+
+      lifecycle_enabled = true
+      noncurrent_days   = 90
 
       bucket_policy = jsonencode({
         Version = "2012-10-17"
@@ -71,10 +74,13 @@ inputs = {
     # Application data, accessed by the microservices through their Pod Identity roles.
     data = {
       name               = "${local.env.project}-${local.env.env}-data-${local.env.account_id}"
-      force_destroy      = true
+      versioning_enabled = true
       sse_algorithm      = "aws:kms"
       kms_master_key_id  = dependency.kms.outputs.kms_key_arns["s3"]
       bucket_key_enabled = true
+
+      lifecycle_enabled = true
+      noncurrent_days   = 90
 
       bucket_policy = jsonencode({
         Version = "2012-10-17"
@@ -94,16 +100,17 @@ inputs = {
       })
     }
 
-    # Loki chunks and index. Loki's compactor enforces the 14-day retention; the lifecycle rule is a backstop.
+    # Loki chunks and index. Loki's compactor enforces the 30-day retention; the lifecycle rule is a backstop.
     loki = {
       name               = "${local.env.project}-${local.env.env}-loki-${local.env.account_id}"
-      force_destroy      = true
+      versioning_enabled = true
       sse_algorithm      = "aws:kms"
       kms_master_key_id  = dependency.kms.outputs.kms_key_arns["s3"]
       bucket_key_enabled = true
 
       lifecycle_enabled = true
-      expiration_days   = 14
+      expiration_days   = 30
+      noncurrent_days   = 1
 
       bucket_policy = jsonencode({
         Version = "2012-10-17"
