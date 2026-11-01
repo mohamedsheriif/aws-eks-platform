@@ -53,20 +53,24 @@ inputs = {
     }
   }
 
-  # TLS required, encrypted at rest, IAM authentication only. One node.
+  # TLS required, encrypted at rest, IAM authentication only. A primary and a replica in
+  # different AZs with automatic failover.
   cache = {
     main = {
-      cluster_name             = "${local.env.project}-${local.env.env}-valkey"
-      description              = "Valkey cache for the microservices"
-      engine                   = "valkey"
-      engine_version           = "8.0"
-      node_type                = "cache.t4g.micro"
-      parameter_group_name     = "default.valkey8"
-      num_cache_clusters       = 1
-      snapshot_retention_limit = 0
-      subnet_group_key_name    = "main"
-      security_group_ids       = [dependency.security_groups_data.outputs.security_group_ids["redis"]]
-      kms_key_id               = dependency.kms.outputs.kms_key_arns["elasticache"]
+      cluster_name               = "${local.env.project}-${local.env.env}-valkey"
+      description                = "Valkey cache for the microservices"
+      engine                     = "valkey"
+      engine_version             = "8.0"
+      node_type                  = "cache.t4g.small"
+      parameter_group_name       = "default.valkey8"
+      num_cache_clusters         = 2
+      automatic_failover_enabled = true
+      multi_az                   = true
+      snapshot_retention_limit   = 7
+      apply_immediately          = false
+      subnet_group_key_name      = "main"
+      security_group_ids         = [dependency.security_groups_data.outputs.security_group_ids["redis"]]
+      kms_key_id                 = dependency.kms.outputs.kms_key_arns["elasticache"]
 
       # Each service gets its own user, limited to its own key prefix.
       iam_users = {
