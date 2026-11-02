@@ -18,6 +18,7 @@ resource "aws_cloudfront_distribution" "this" {
   aliases             = each.value.aliases
   http_version        = each.value.http_version
   price_class         = each.value.price_class
+  web_acl_id          = each.value.web_acl_id
   default_root_object = each.value.default_root_object
 
   dynamic "origin" {

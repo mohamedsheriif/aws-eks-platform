@@ -47,6 +47,9 @@ variable "cloudfront_distributions" {
     # (Optional) The price class for the distribution. Defaults to "PriceClass_100".
     price_class = optional(string, "PriceClass_100")
 
+    # (Optional) ARN of a WAFv2 web ACL with CLOUDFRONT scope. Defaults to null (no WAF).
+    web_acl_id = optional(string)
+
     # (Optional) Object returned for requests to the root URL. Defaults to null.
     default_root_object = optional(string, null)
 
