@@ -6,8 +6,8 @@ Infrastructure for **ShopFlow**, an e-commerce application made of five microser
 Everything is defined as code with **Terraform modules and Terragrunt**: the network, a private Kubernetes cluster,
 managed data services, and the in-cluster platform that delivers and observes the services.
 
-Each environment gets its own AWS account; dev is built and prod is next. The whole stack can be planned
-locally, without an AWS account.
+Dev and prod each have their own AWS account and share the same modules; prod adds high availability,
+Spot capacity with Karpenter, WAF and full logging. The whole stack can be planned locally, without an AWS account.
 
 ## Architecture
 
@@ -16,12 +16,13 @@ flowchart LR
   user([Users])
   eng([Engineers])
 
-  user --> cf[CloudFront] --> s3a[(S3 assets)]
-  user --> palb
+  user --> waf{{WAF in prod}}
+  waf --> cf[CloudFront] --> s3a[(S3 assets)]
+  waf --> palb
 
   eng -- Tailscale --> ts
 
-  subgraph VPC["VPC 10.10.0.0/16 · 2 AZs"]
+  subgraph VPC["VPC · 2 AZs in dev, 3 in prod"]
     subgraph public[Public subnets]
       palb[Public ALB]
       ts[Tailscale router]
@@ -29,7 +30,7 @@ flowchart LR
     end
     subgraph app[App subnets]
       ialb[Internal ALB]
-      eks[EKS<br/>system + apps node groups]
+      eks[EKS<br/>managed node groups<br/>+ Karpenter Spot in prod]
     end
     subgraph private[Private subnets]
       rds[(PostgreSQL)]
@@ -59,8 +60,8 @@ flowchart LR
 | Area | Tools |
 |---|---|
 | IaC | Terraform 1.13, Terragrunt 0.90, AWS provider 6.38 |
-| Compute | EKS 1.34, managed node groups on Graviton (arm64), AL2023 |
-| Networking | VPC, ALB, NAT gateway, Route53, CloudFront, ACM, Tailscale |
+| Compute | EKS 1.34, managed node groups and Karpenter on Graviton (arm64), AL2023 |
+| Networking | VPC, ALB, NAT gateway, Route53, CloudFront, ACM, WAF, Tailscale |
 | Data | RDS PostgreSQL 17, ElastiCache Valkey 8, S3, SQS, SES |
 | Security | KMS, Secrets Manager, IAM, EKS Pod Identity, External Secrets |
 | Delivery | Argo CD, Argo Rollouts, Helm |
@@ -92,13 +93,16 @@ flowchart LR
   TLS-required Valkey, and bucket and queue policies that deny non-TLS requests.
 - **Secrets stay out of Terraform state.** Secrets are created empty, filled outside Terraform, and synced into
   Kubernetes by External Secrets through namespaced SecretStores.
+- **WAF in prod.** CloudFront and the public ALB are behind AWS managed rule groups (IP reputation, common
+  exploits, known bad inputs, SQL injection on the API) and a per-IP rate limit.
 - **MFA-protected cluster access.** IAM groups assume an admin or a read-only role, mapped through EKS access entries.
   The cluster creator gets no implicit admin.
 
 ### Networking
 
-- Three subnet tiers across two AZs: **public** (ALB, NAT, router), **app** (nodes and pods, /19 per AZ for
-  VPC CNI prefix delegation) and **private** (databases, no internet route).
+- Three subnet tiers across two AZs in dev and three in prod: **public** (ALB, NAT, router), **app** (nodes and
+  pods, /19 per AZ for VPC CNI prefix delegation) and **private** (databases, no internet route).
+- Dev uses `10.10.0.0/16` and prod `10.20.0.0/16`, so both Tailscale routers share one tailnet.
 - Two IngressClasses: **`alb-public`** is internet-facing and only usable from the `apps` namespace;
   **`alb-internal`** serves platform UIs over Tailscale.
 - external-dns manages records for each Ingress in the environment's zone.
@@ -111,17 +115,22 @@ flowchart LR
 - Argo CD runs an **app of apps** that syncs the microservices from a private GitOps repository, with credentials
   synced from Secrets Manager.
 - Argo Rollouts enables canary and blue-green releases.
+- **Karpenter in prod** adds Spot nodes for application pods on top of an on-demand baseline, and drains nodes
+  ahead of Spot interruptions using EventBridge events delivered through SQS.
 
 ### Observability
 
 - **Metrics:** kube-prometheus-stack, with Prometheus picking up ServiceMonitors from every namespace.
 - **Logs:** Alloy on every node ships container logs to Loki, which runs in simple scalable mode on S3.
 - **Dashboards:** Grafana with Prometheus and Loki data sources, admin credentials from Secrets Manager.
+- **Audit trail in prod:** EKS control plane logs, PostgreSQL logs, VPC flow logs, and ALB and CloudFront access
+  logs.
 
 ### Cost optimization
 
 - Graviton instances everywhere: EKS nodes, RDS, ElastiCache and the Tailscale router.
 - Dev runs one NAT gateway and single-AZ data services, with chart resources sized to fit one system node.
+- Prod scales application capacity on Spot through Karpenter, which also consolidates underused nodes.
 - S3 buckets use Bucket Keys, which cuts KMS request costs.
 
 ## Project structure
@@ -134,11 +143,12 @@ flowchart LR
 │   ├── bootstrap.sh       One-time account setup: state bucket and CI roles
 │   └── scan-plans.sh      Trivy scan of each unit's plan, as one SARIF report
 └── live/
-    └── dev/
-        ├── env.hcl        Project, account, region, domain and tags
-        ├── root.hcl       S3 backend and AWS provider
-        ├── root-helm.hcl  Same, plus the helm and kubectl providers
-        └── <unit>/        One Terragrunt unit per stack
+    ├── dev/
+    │   ├── env.hcl        Project, account, region, domain and tags
+    │   ├── root.hcl       S3 backend and AWS provider
+    │   ├── root-helm.hcl  Same, plus the helm and kubectl providers
+    │   └── <unit>/        One Terragrunt unit per stack
+    └── prod/              Same layout, with prod values and three extra units
 ```
 
 Each module creates its resources with `for_each` over a map, so the same module serves one resource or many.
@@ -146,11 +156,11 @@ Units keep their configuration inline and declare their dependencies, which also
 
 | Unit | Creates |
 |---|---|
-| `github-oidc` | GitHub OIDC provider, plan role for pull requests, apply role for the `dev` environment |
+| `github-oidc` | GitHub OIDC provider, plan role for pull requests and `main`, apply role for the environment |
 | `kms` | One KMS key per service |
 | `vpc` | VPC, subnets, route tables, NAT gateway, S3 endpoint |
 | `security-groups` | Tailscale router and EKS API security groups |
-| `route53`, `acm` | `dev.shopflow.com` hosted zone and wildcard certificate |
+| `route53`, `acm` | Hosted zone and wildcard certificate (prod's `shopflow.com` delegates `dev.shopflow.com`) |
 | `cloudfront`, `s3` | Assets distribution, assets, data and Loki buckets |
 | `sqs`, `ses` | Notifications queue with DLQ, SES domain identity with DKIM |
 | `iam-roles` | EKS, node, controller and Tailscale roles |
@@ -163,26 +173,32 @@ Units keep their configuration inline and declare their dependencies, which also
 | `tailscale` | Tailscale subnet router |
 | `helm-core` | Controllers, CRDs and cluster-wide objects |
 | `helm-platform` | DNS, monitoring, logging and delivery |
+| `s3-logs` (prod) | Logs bucket for flow logs and ALB and CloudFront access logs |
+| `waf` (prod) | Web ACLs for CloudFront and the public ALB |
+| `eventbridge` (prod) | Spot interruption and instance events for Karpenter |
 
 ## Environments
 
-| | dev | prod (planned) |
+| | dev | prod |
 |---|---|---|
+| Availability zones | 2 | 3 |
 | NAT gateway | One zonal | Regional |
-| RDS and Valkey | Single-AZ | Multi-AZ |
-| Node scaling | Managed node groups | On-demand baseline + Karpenter on Spot |
-| EKS control plane logs | Off | All log types, 90 days |
-| VPC flow logs | Off | On |
+| Nodes | 1 system + 1 apps, t4g.medium | 2 system + 2 apps, t4g.large, plus Karpenter on Spot |
+| PostgreSQL | db.t4g.micro, single-AZ, 1-day backups | db.t4g.medium, Multi-AZ, 14-day backups, Performance Insights |
+| Valkey | cache.t4g.micro, one node | cache.t4g.small, primary + replica with automatic failover |
+| WAF | Off | CloudFront and public ALB |
+| Logs | None | EKS control plane, PostgreSQL, VPC flow, ALB and CloudFront access logs |
 | Deletion protection, S3 versioning | Off | On |
 | KMS deletion window / secret recovery | 7 / 0 days | 30 / 30 days |
 | Prometheus / Loki retention | 7 / 14 days | 15 / 30 days |
+| Platform replicas | 1 | 2 for controllers, Argo CD and Loki; Alertmanager on |
 
 ## Deployment
 
 ### Prerequisites
 
 - Terraform ≥ 1.10, Terragrunt 0.90, AWS CLI v2, kubectl
-- An AWS CLI profile per environment (`shopflow-dev`) with MFA
+- An AWS CLI profile per environment (`shopflow-dev`, `shopflow-prod`) with MFA
 - A Tailscale account
 
 ### Bootstrap (once per environment)
@@ -192,7 +208,7 @@ blocked, TLS only), then applies `github-oidc` so GitHub Actions can plan and ap
 It checks that the profile points at the account in `env.hcl` and is safe to re-run.
 
 ```bash
-./scripts/bootstrap.sh dev
+./scripts/bootstrap.sh dev    # or prod
 ```
 
 ### Plan locally, without AWS
@@ -200,11 +216,13 @@ It checks that the profile points at the account in `env.hcl` and is safe to re-
 `TG_MOCK=true` switches every unit to local state, fake credentials and mocked dependency outputs:
 
 ```bash
-cd live/dev
+cd live/dev                   # or live/prod
 TG_MOCK=true terragrunt run --all plan
 ```
 
 ### Apply
+
+The commands use dev; for prod, run them in `live/prod` with the `shopflow-prod` names.
 
 ```bash
 cd live/dev
@@ -238,9 +256,9 @@ terragrunt run --all apply --queue-include-dir 'helm-*' --queue-strict-include
    aws secretsmanager put-secret-value --secret-id shopflow/dev/tailscale/auth-key --secret-string '<key>'
    ```
 
-2. **Tailscale.** Approve the advertised `10.10.0.0/16` route for `shopflow-dev-router`, and add the VPC resolver
-   `10.10.0.2` as a split-DNS nameserver for `us-east-1.eks.amazonaws.com`, `rds.amazonaws.com`,
-   `cache.amazonaws.com` and `dev.shopflow.com`.
+2. **Tailscale.** Approve the advertised route (`10.10.0.0/16` for `shopflow-dev-router`, `10.20.0.0/16` for
+   `shopflow-prod-router`), and add the VPC resolver (`10.10.0.2` or `10.20.0.2`) as a split-DNS nameserver for
+   `us-east-1.eks.amazonaws.com`, `rds.amazonaws.com`, `cache.amazonaws.com` and the environment's domain.
 
 3. **Cluster access.** Add your IAM user to `shopflow-dev-admins` (or `shopflow-dev-developers` for read-only).
    The group can assume the matching EKS role, which requires MFA.
@@ -258,10 +276,14 @@ terragrunt run --all apply --queue-include-dir 'helm-*' --queue-strict-include
 
    | | URL | Login |
    |---|---|---|
-   | Argo CD | https://argocd.dev.shopflow.com | `admin`, password in the `argocd-initial-admin-secret` Secret |
-   | Grafana | https://grafana.dev.shopflow.com | From `shopflow/dev/grafana/admin` |
+   | Argo CD | https://argocd.dev.shopflow.com, https://argocd.shopflow.com | `admin`, password in the `argocd-initial-admin-secret` Secret |
+   | Grafana | https://grafana.dev.shopflow.com, https://grafana.shopflow.com | From `shopflow/<env>/grafana/admin` |
 
    For the Argo CD CLI: `argocd login argocd.dev.shopflow.com --grpc-web`.
+
+6. **Prod only.** Replace the placeholder dev name servers in `live/prod/route53` with the output of
+   `terragrunt output name_servers` in `live/dev/route53`, and add an Alertmanager receiver (Slack, PagerDuty)
+   to the kube-prometheus-stack values.
 
 ## CI/CD
 
@@ -270,7 +292,7 @@ GitHub Actions, authenticated to AWS through OIDC (no stored keys):
 | Workflow | Trigger | Jobs |
 |---|---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | Pull request, push to `main` | **Format** (`terraform fmt`, `terragrunt hcl fmt`) and **Lint** (TFLint with the AWS ruleset) in parallel, then **Plan** per environment, with each unit's plan scanned by **Trivy** |
-| [`cd.yml`](.github/workflows/cd.yml) | Push to `main` | **Apply** per environment, inside a GitHub environment that can require approval |
+| [`cd.yml`](.github/workflows/cd.yml) | Push to `main` | **Apply** dev, then prod if dev succeeded, each inside a GitHub environment that can require approval |
 
 - **Mock until AWS exists.** While the repository variable `AWS_DEPLOY_ENABLED` isn't `true`, plans run with
   `TG_MOCK=true` and apply is skipped. Setting it switches to real plans and applies.
@@ -284,5 +306,4 @@ GitHub Actions, authenticated to AWS through OIDC (no stored keys):
 
 ## Roadmap
 
-- [ ] Prod environment
 - [ ] Account baseline: CloudTrail, GuardDuty, AWS Config, AWS Budgets
