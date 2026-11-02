@@ -28,6 +28,24 @@ dependency "route53" {
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
 }
 
+dependency "waf" {
+  config_path = "../waf"
+
+  mock_outputs = {
+    web_acl_arns = { cloudfront = "arn:aws:wafv2:us-east-1:222222222222:global/webacl/shopflow-prod-cloudfront/mock" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
+dependency "s3_logs" {
+  config_path = "../s3-logs"
+
+  mock_outputs = {
+    bucket_arns = { logs = "arn:aws:s3:::shopflow-prod-logs-222222222222" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
 inputs = {
   project = local.env.project
   env     = local.env.env
@@ -49,6 +67,12 @@ inputs = {
       route53_zone_id = dependency.route53.outputs.zone_ids["main"]
       is_ipv6_enabled = true
       http_version    = "http2and3"
+      web_acl_id      = dependency.waf.outputs.web_acl_arns["cloudfront"]
+
+      # Access logs go to the logs bucket under AWSLogs/<account>/CloudFront/.
+      log_delivery = {
+        bucket_arn = dependency.s3_logs.outputs.bucket_arns["logs"]
+      }
 
       origins = {
         assets = {

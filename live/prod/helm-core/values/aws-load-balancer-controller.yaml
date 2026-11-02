@@ -3,7 +3,7 @@ clusterName: ${cluster_name}
 region: ${region}
 vpcId: ${vpc_id}
 
-replicaCount: 1
+replicaCount: 2
 
 # Must match the Pod Identity association in the eks unit.
 serviceAccount:
@@ -16,10 +16,11 @@ createIngressClassResource: false
 # controller's webhook and fail while the controller is down.
 enableServiceMutatorWebhook: false
 
-# The IAM policy has no WAF or Shield permissions.
+# WAFv2 attaches the web ACL to the public ALB. Classic WAF and Shield aren't used,
+# and the IAM policy has no permissions for them.
 enableShield: false
 enableWaf: false
-enableWafv2: false
+enableWafv2: true
 
 defaultTargetType: ip
 defaultTags: ${tags}

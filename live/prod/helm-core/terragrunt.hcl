@@ -46,6 +46,24 @@ dependency "kms" {
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
 }
 
+dependency "waf" {
+  config_path = "../waf"
+
+  mock_outputs = {
+    web_acl_arns = { alb-public = "arn:aws:wafv2:us-east-1:222222222222:regional/webacl/shopflow-prod-alb-public/mock" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
+dependency "s3_logs" {
+  config_path = "../s3-logs"
+
+  mock_outputs = {
+    bucket_names = { logs = "shopflow-prod-logs-222222222222" }
+  }
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
+}
+
 dependency "iam_roles" {
   config_path = "../iam-roles"
 
@@ -135,12 +153,15 @@ inputs = {
     ingressclassparams-alb-internal = templatefile("${get_terragrunt_dir()}/manifests/ingressclassparams-alb-internal.yaml", {
       group           = "${local.env.project}-${local.env.env}-internal"
       certificate_arn = dependency.acm.outputs.cert_arns["main"]
+      logs_bucket     = dependency.s3_logs.outputs.bucket_names["logs"]
     })
     ingressclass-alb-internal = file("${get_terragrunt_dir()}/manifests/ingressclass-alb-internal.yaml")
 
     ingressclassparams-alb-public = templatefile("${get_terragrunt_dir()}/manifests/ingressclassparams-alb-public.yaml", {
       group           = "${local.env.project}-${local.env.env}-public"
       certificate_arn = dependency.acm.outputs.cert_arns["main"]
+      logs_bucket     = dependency.s3_logs.outputs.bucket_names["logs"]
+      waf_acl_arn     = dependency.waf.outputs.web_acl_arns["alb-public"]
     })
     ingressclass-alb-public = file("${get_terragrunt_dir()}/manifests/ingressclass-alb-public.yaml")
 

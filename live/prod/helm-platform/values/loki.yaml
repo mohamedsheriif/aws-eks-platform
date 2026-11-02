@@ -5,8 +5,9 @@ deploymentMode: SimpleScalable
 loki:
   # Single tenant.
   auth_enabled: false
+  # Every log stream is written to two of the write replicas.
   commonConfig:
-    replication_factor: 1
+    replication_factor: 2
   schemaConfig:
     configs:
       - from: "2025-01-01"
@@ -25,7 +26,7 @@ loki:
     s3:
       region: ${region}
   limits_config:
-    retention_period: 336h
+    retention_period: 720h
   compactor:
     compaction_interval: 10m
     retention_enabled: true
@@ -33,7 +34,7 @@ loki:
     delete_request_store: s3
 
 write:
-  replicas: 1
+  replicas: 2
   persistence:
     storageClass: gp3
     size: 10Gi
@@ -41,13 +42,13 @@ write:
     role: system
   resources:
     requests:
-      cpu: 25m
-      memory: 128Mi
+      cpu: 100m
+      memory: 256Mi
     limits:
-      memory: 384Mi
+      memory: 768Mi
 
 read:
-  replicas: 1
+  replicas: 2
   nodeSelector:
     role: system
   resources:
@@ -58,7 +59,7 @@ read:
       memory: 256Mi
 
 backend:
-  replicas: 1
+  replicas: 2
   persistence:
     storageClass: gp3
     size: 10Gi
@@ -73,7 +74,7 @@ backend:
 
 # Single entry point: routes pushes to write and queries to read.
 gateway:
-  replicas: 1
+  replicas: 2
   nodeSelector:
     role: system
   resources:

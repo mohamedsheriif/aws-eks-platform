@@ -13,14 +13,32 @@ kubeEtcd:
 kubeProxy:
   enabled: false
 
-# Dev has no alert routing.
+# Alert routing (Slack, PagerDuty, ...) is configured in alertmanager.config when a
+# receiver is chosen; until then alerts are visible in the Alertmanager UI.
 alertmanager:
-  enabled: false
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+    nodeSelector:
+      role: system
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
 
 prometheus:
   prometheusSpec:
-    retention: 7d
-    retentionSize: 18GB
+    retention: 15d
+    retentionSize: 45GB
     # Pick up ServiceMonitors, PodMonitors and rules from every release, not just this one.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
@@ -33,15 +51,15 @@ prometheus:
             - ReadWriteOnce
           resources:
             requests:
-              storage: 20Gi
+              storage: 50Gi
     nodeSelector:
       role: system
     resources:
       requests:
-        cpu: 50m
-        memory: 320Mi
+        cpu: 200m
+        memory: 1Gi
       limits:
-        memory: 768Mi
+        memory: 2Gi
 
 prometheusOperator:
   nodeSelector:

@@ -144,8 +144,8 @@ inputs = {
       }
     }
 
-    # Permissions follow the AWS Load Balancer Controller reference policy; mutations
-    # are limited to resources tagged with elbv2.k8s.aws/cluster.
+    # Permissions follow the AWS Load Balancer Controller reference policy, including WAFv2 for
+    # the public ALB; mutations are limited to resources tagged with elbv2.k8s.aws/cluster.
     aws-load-balancer-controller = {
       name         = "${local.env.project}-${local.env.env}-aws-load-balancer-controller"
       description  = "kube-system/aws-load-balancer-controller"
@@ -316,6 +316,12 @@ inputs = {
                 "elasticloadbalancing:ModifyRule",
                 "elasticloadbalancing:SetRulePriorities",
               ]
+              Resource = "*"
+            },
+            {
+              # Attach the WAF web ACL named in the alb-public IngressClassParams.
+              Effect   = "Allow"
+              Action   = ["wafv2:GetWebACL", "wafv2:GetWebACLForResource", "wafv2:AssociateWebACL", "wafv2:DisassociateWebACL"]
               Resource = "*"
             },
           ]

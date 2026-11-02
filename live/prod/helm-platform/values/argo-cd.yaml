@@ -8,13 +8,14 @@ configs:
   params:
     server.insecure: true
 
-# No SSO or notifications in dev; log in with the generated admin password.
+# No SSO or notifications yet; log in with the generated admin password.
 dex:
   enabled: false
 notifications:
   enabled: false
 
 server:
+  replicas: 2
   ingress:
     enabled: true
     ingressClassName: alb-internal
@@ -45,6 +46,7 @@ controller:
       memory: 384Mi
 
 repoServer:
+  replicas: 2
   metrics:
     enabled: true
     serviceMonitor:
