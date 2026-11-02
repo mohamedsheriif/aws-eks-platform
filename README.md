@@ -306,4 +306,20 @@ GitHub Actions, authenticated to AWS through OIDC (no stored keys):
 
 ## Roadmap
 
-- [ ] Account baseline: CloudTrail, GuardDuty, AWS Config, AWS Budgets
+**Account security**
+- [ ] CloudTrail: an organization trail for every API call, with log file validation, in a dedicated audit bucket
+- [ ] GuardDuty: threat detection with S3, EKS audit log, EKS runtime and RDS login protection
+- [ ] AWS Config: resource history and managed rules for the settings this platform relies on
+- [ ] Security Hub: one place for findings from GuardDuty, AWS Config and IAM Access Analyzer
+- [ ] IAM Access Analyzer: flag resources shared outside the account
+- [ ] AWS Budgets: cost alerts per environment
+
+**Kubernetes security**
+- [ ] Policy as code with Kyverno: block privileged pods, require resource limits and trusted registries
+- [ ] Image scanning and signing: ECR scan on push, cosign signatures verified at admission
+- [ ] Network policies with the VPC CNI to restrict traffic between namespaces
+
+**Delivery**
+- [ ] Renovate for actions, providers, charts and tool versions
+- [ ] Plans posted as pull request comments
+- [ ] Tailscale in CI, so the in-cluster units are planned and applied from GitHub Actions
