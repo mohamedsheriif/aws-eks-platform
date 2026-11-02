@@ -1,0 +1,113 @@
+# DaemonSet that tails container logs on its own node and ships them to Loki.
+alloy:
+  configMap:
+    content: |
+      logging {
+        level  = "warn"
+        format = "logfmt"
+      }
+
+      discovery.kubernetes "pods" {
+        role = "pod"
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("K8S_NODE_NAME")
+        }
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        // Sidecars and node agents that only add noise.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          regex         = "^(config-reloader|init-config-reloader|grafana-sc-dashboard|grafana-sc-datasources|node-driver-registrar|liveness-probe|csi-attacher|csi-provisioner|csi-resizer|csi-snapshotter|eks-pod-identity-agent|eks-pod-identity-agent-init|aws-eks-nodeagent)$"
+          action        = "drop"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "job"
+        }
+
+        // /var/log/pods/<namespace>_<pod>_<uid>/<container>/*.log
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_name", "__meta_kubernetes_pod_uid"]
+          separator     = "_"
+          target_label  = "__tmp_pod_path"
+        }
+        rule {
+          source_labels = ["__tmp_pod_path", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "__path__"
+          replacement   = "/var/log/pods/$1/*.log"
+        }
+      }
+
+      local.file_match "pods" {
+        path_targets = discovery.relabel.pods.output
+        sync_period  = "5s"
+      }
+
+      loki.source.file "pods" {
+        targets    = local.file_match.pods.targets
+        forward_to = [loki.process.pods.receiver]
+      }
+
+      loki.process "pods" {
+        stage.cri {}
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki-gateway.logging.svc.cluster.local/loki/api/v1/push"
+        }
+        external_labels = {
+          cluster = "${cluster}",
+        }
+      }
+
+  mounts:
+    varlog: true
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+
+configReloader:
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      memory: 32Mi
+
+controller:
+  type: daemonset
+  # Every node, including any tainted ones.
+  tolerations:
+    - operator: Exists
+
+serviceMonitor:
+  enabled: true

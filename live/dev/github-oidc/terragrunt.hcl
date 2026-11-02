@@ -48,11 +48,11 @@ inputs = {
       }
     }
 
-    # Applies: only jobs that run in the protected "dev" GitHub environment,
-    # which can require a reviewer's approval before the job starts.
+    # Applies: only jobs that run in the protected GitHub environment named after this
+    # environment, which can require a reviewer's approval before the job starts.
     github-apply = {
       name              = "${local.env.project}-${local.env.env}-github-apply"
-      description       = "terragrunt apply from the dev GitHub environment"
+      description       = "terragrunt apply from the ${local.env.env} GitHub environment"
       oidc_provider_key = "github"
       audience          = "sts.amazonaws.com"
       subjects          = ["repo:mohamedsheriif/aws-eks-platform:environment:${local.env.env}"]

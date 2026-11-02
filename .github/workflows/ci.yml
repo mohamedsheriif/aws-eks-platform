@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [dev]
+        environment: [dev, prod]
     env:
       # Until the AWS account exists (repository variable AWS_DEPLOY_ENABLED != "true"),
       # plans run in mock mode: local state, fake credentials, mocked dependency outputs.

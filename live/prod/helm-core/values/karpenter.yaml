@@ -1,0 +1,23 @@
+settings:
+  clusterName: ${cluster_name}
+  interruptionQueue: ${interruption_queue}
+
+controller:
+  # Pods can't reach IMDS (hop limit 1), so the region is set explicitly.
+  env:
+    - name: AWS_REGION
+      value: ${region}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# Must match the Pod Identity association in the eks unit.
+serviceAccount:
+  name: karpenter
+
+# On the managed system nodes; the chart's affinity already keeps it off nodes it manages.
+nodeSelector:
+  role: system
