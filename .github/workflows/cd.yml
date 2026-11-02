@@ -1,7 +1,7 @@
 name: CD
 
-# Merges to main: apply every environment. Each job runs in a GitHub environment of the
-# same name, which can require approval and is the only thing the apply role trusts.
+# Merges to main: apply dev, then prod. Each job runs in a GitHub environment of the same
+# name, which can require approval and is the only thing the apply role trusts.
 on:
   push:
     branches: [main]
@@ -35,10 +35,12 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC token for AWS
+    # One environment at a time, in order; if dev fails, prod is cancelled.
     strategy:
       max-parallel: 1
+      fail-fast: true
       matrix:
-        environment: [dev]
+        environment: [dev, prod]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
